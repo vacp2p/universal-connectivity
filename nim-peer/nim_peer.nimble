@@ -10,5 +10,4 @@ bin           = @["nim_peer"]
 
 # Dependencies
 
-requires "nim >= 2.2.0, illwill"
-requires "https://github.com/enthus1ast/illwillWidgets"
+requires "nim >= 2.2.0, nimwave"
