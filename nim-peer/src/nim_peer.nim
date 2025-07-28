@@ -1,10 +1,9 @@
+import chronos, unicode, tables, deques, strutils, sequtils, os
 from illwave as iw import nil, `[]`, `[]=`, `==`
 from nimwave as nw import nil
 from terminal import nil
-import unicode, tables, deques
-from strutils import nil
-from sequtils import nil
-from os import nil
+import libp2p
+
 
 type
   State* = object
@@ -14,22 +13,9 @@ type
     chats*: seq[string]
     messages*: seq[string]
     inputBuffer*: string
+    p2pSwitch*: Switch
 
 include nimwave/prelude
-
-var
-  mouseQueue: Deque[iw.MouseInfo]
-  keyQueue: Deque[iw.Key]
-
-proc onMouse*(m: iw.MouseInfo) =
-  mouseQueue.addLast(m)
-  case m.scrollDir:
-  of iw.ScrollDirection.sdUp: keyQueue.addLast(iw.Key.Up)
-  of iw.ScrollDirection.sdDown: keyQueue.addLast(iw.Key.Down)
-  else: discard
-
-proc onKey*(k: iw.Key) =
-  keyQueue.addLast(k)
 
 proc addFocusArea(ctx: var nw.Context[State]): bool =
   result = ctx.data.focusIndex == ctx.data.focusAreas[].len
@@ -80,113 +66,135 @@ method render*(node: MessagesPanel, ctx: var nw.Context[State]) =
   )
 
 # ------------------------
-# Tick
+# Tick (main render + events)
 # ------------------------
 
-proc tick*(ctx: var nw.Context[State]) =
-  while true:
-    let
-      mouse = if mouseQueue.len > 0: mouseQueue.popFirst else: iw.MouseInfo()
-      key = if keyQueue.len > 0: keyQueue.popFirst else: iw.Key.None
+proc tick*(ctx: var nw.Context[State], mouse: iw.MouseInfo, key: iw.Key) =
+  # Use passed mouse/key only (no globals)
 
-    # Handle mouse click for focus
-    if mouse.button == iw.MouseButton.mbLeft and mouse.action == iw.MouseButtonAction.mbaPressed:
-      for i in countDown(ctx.data.focusAreas[].len-1, 0):
-        if iw.contains(ctx.data.focusAreas[i], mouse):
-          ctx.data.focusIndex = i
-          break
+  if mouse.button == iw.MouseButton.mbLeft and mouse.action == iw.MouseButtonAction.mbaPressed:
+    for i in countDown(ctx.data.focusAreas[].len-1, 0):
+      if iw.contains(ctx.data.focusAreas[i], mouse):
+        ctx.data.focusIndex = i
+        break
 
-    # Focus change with up/down
-    var focusChange = case key
-      of iw.Key.Up: -1
-      of iw.Key.Down: 1
-      else: 0
+  var focusChange = case key
+    of iw.Key.Up: -1
+    of iw.Key.Down: 1
+    else: 0
 
-    if focusChange != 0 and ctx.data.focusAreas[].len > 0:
-      if ctx.data.focusIndex + focusChange in 0 ..< ctx.data.focusAreas[].len:
-        ctx.data.focusIndex += focusChange
+  if focusChange != 0 and ctx.data.focusAreas[].len > 0:
+    if ctx.data.focusIndex + focusChange in 0 ..< ctx.data.focusAreas[].len:
+      ctx.data.focusIndex += focusChange
 
-    # Input editing
-    if key in {iw.Key.Space .. iw.Key.Tilde}:
-      ctx.data.inputBuffer.add(cast[char](key.ord))
-    elif key == iw.Key.Backspace and ctx.data.inputBuffer.len > 0:
-      ctx.data.inputBuffer.setLen(ctx.data.inputBuffer.len - 1)
-    elif key == iw.Key.Enter:
-      ctx.data.messages.add("You: " & ctx.data.inputBuffer)
-      ctx.data.inputBuffer = ""
-    elif key != iw.Key.None:
-      discard
+  if key in {iw.Key.Space .. iw.Key.Tilde}:
+    ctx.data.inputBuffer.add(cast[char](key.ord))
+  elif key == iw.Key.Backspace and ctx.data.inputBuffer.len > 0:
+    ctx.data.inputBuffer.setLen(ctx.data.inputBuffer.len - 1)
+  elif key == iw.Key.Enter:
+    ctx.data.messages.add("You: " & ctx.data.inputBuffer)
+    ctx.data.inputBuffer = ""
+  elif key != iw.Key.None:
+    discard
 
-    ctx.data.focusAreas[] = @[]
+  ctx.data.focusAreas[] = @[]
 
+  try:
     renderRoot(
       nw.Box(
         direction: nw.Direction.Vertical,
         children: nw.seq(
-          nw.Box(
-            direction: nw.Direction.Horizontal,
-            children: nw.seq(PeersPanel(), ChatsPanel())
-          ),
+          nw.Box(direction: nw.Direction.Horizontal, children: nw.seq(PeersPanel(), ChatsPanel())),
           MessagesPanel()
         )
       ),
       ctx
     )
-
-    if mouseQueue.len == 0 and keyQueue.len == 0:
-      break
-
-    iw.clear(ctx.tb)
+  except Exception as e:
+    echo "Render error: ", e.msg
 
 # ------------------------
-# Init / main loop
+# Init / deinit
 # ------------------------
 
-proc deinit() =
-  iw.deinit()
+proc deinit(ctx: var nw.Context[State]) =
+  try:
+    iw.deinit()
+  except:
+    echo "iw.deinit error"
   terminal.showCursor()
 
-proc init(ctx: var nw.Context[State]) =
+proc initCtx(ctx: var nw.Context[State]) =
   terminal.enableTrueColors()
-  iw.init()
-  setControlCHook(
-    proc () {.noconv.} =
-      deinit()
-      quit(0)
-  )
+  try:
+    iw.init()
+  except:
+    echo "iw.init error"
   terminal.hideCursor()
-  ctx = nw.initContext[State]()
-  new ctx.data.focusAreas
-  ctx.data.peers = @["peer1", "peer2"]
+
+  ctx.data.focusIndex = 0
+  ctx.data.focusAreas = new seq[iw.TerminalBuffer]
+  ctx.data.peers =  @[]
   ctx.data.chats = @["chat1", "chat2"]
   ctx.data.messages = @["Welcome to nim universal-connectivity-app!"]
-  ctx.data.inputBuffer = " type here"
+  ctx.data.inputBuffer = ""
+  ctx.data.p2pSwitch = SwitchBuilder.new()
+    .withRng(newRng())
+    .withTcpTransport()
+    .withMplex()
+    .withNoise()
+    .build()
 
-proc tick(ctx: var nw.Context[State], prevTb: var iw.TerminalBuffer, mouseInfo: var iw.MouseInfo) =
-  let key = iw.getKey(mouseInfo)
-  if key == iw.Key.Mouse:
-    onMouse(mouseInfo)
-  elif key != iw.Key.None:
-    onKey(key)
-  ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
-  tick(ctx)
-  iw.display(ctx.tb, prevTb)
+# ------------------------
+# Async main loop
+# ------------------------
 
-proc main() =
+proc runUi*(ctx: var nw.Context[State]) =
   var
-    ctx: nw.Context[State]
     prevTb: iw.TerminalBuffer
-    mouseInfo: iw.MouseInfo
-  init(ctx)
+    mouseQueue: Deque[iw.MouseInfo]
+    keyQueue: Deque[iw.Key]
+    mouse: iw.MouseInfo
+    key: iw.Key
+
   while true:
+    key = iw.getKey(mouse)
+    if key == iw.Key.Mouse:
+      mouseQueue.addLast(mouse)
+      case mouse.scrollDir:
+      of iw.ScrollDirection.sdUp: keyQueue.addLast(iw.Key.Up)
+      of iw.ScrollDirection.sdDown: keyQueue.addLast(iw.Key.Down)
+      else: discard
+    elif key != iw.Key.None:
+      keyQueue.addLast(key)
+
+    mouse = if mouseQueue.len > 0: mouseQueue.popFirst else: iw.MouseInfo()
+    key = if keyQueue.len > 0: keyQueue.popFirst else: iw.Key.None
+
+    # update peer list from switch
+    ctx.data.peers = ctx.data.p2pSwitch.peerInfo.addrs.mapIt($it)
+
+    ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
+    tick(ctx, mouse, key)
     try:
-      tick(ctx, prevTb, mouseInfo)
-      prevTb = ctx.tb
-    except Exception as ex:
-      deinit()
-      raise ex
-    os.sleep(5)
+      iw.display(ctx.tb, prevTb)
+    except:
+      echo "Display error"
+    prevTb = ctx.tb
+
+    sleep(5)
+
+proc main*() {.async.} =
+  var ctx = nw.initContext[State]()
+  initCtx(ctx)
+  await ctx.data.p2pSwitch.start()
+  try:
+    runUi(ctx)
+  except Exception:
+    if ctx.data.p2pSwitch != nil:
+      await ctx.data.p2pSwitch.stop()
+    deinit(ctx)
 
 when isMainModule:
-  main()
+  waitFor main()
 
