@@ -1,5 +1,5 @@
 import chronos, unicode, tables, deques, strutils, sequtils, os
-from illwave as iw import nil, `[]`, `[]=`, `==`
+from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
 import libp2p
@@ -157,7 +157,14 @@ proc runUi*(ctx: var nw.Context[State]) =
     mouse: iw.MouseInfo
     key: iw.Key
 
+  ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
+
   while true:
+    let width = terminal.terminalWidth()
+    let height = terminal.terminalHeight()
+    if ctx.tb.width() != width or ctx.tb.height() != height:
+      ctx.tb = iw.initTerminalBuffer(width, height)
+
     key = iw.getKey(mouse)
     if key == iw.Key.Mouse:
       mouseQueue.addLast(mouse)
@@ -174,7 +181,6 @@ proc runUi*(ctx: var nw.Context[State]) =
     # update peer list from switch
     ctx.data.peers = ctx.data.p2pSwitch.peerInfo.addrs.mapIt($it)
 
-    ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
     tick(ctx, mouse, key)
     try:
       iw.display(ctx.tb, prevTb)
