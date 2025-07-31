@@ -2,8 +2,7 @@ import chronos, unicode, tables, deques, strutils, sequtils, os
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
-import libp2p
-
+import libp2p, cligen
 
 type
   State* = object
@@ -13,7 +12,7 @@ type
     chats*: seq[string]
     messages*: seq[string]
     inputBuffer*: string
-    p2pSwitch*: Switch
+    switch*: Switch
 
 include nimwave/prelude
 
@@ -138,10 +137,10 @@ proc initCtx(ctx: var nw.Context[State]) =
   ctx.data.chats = @["chat1", "chat2"]
   ctx.data.messages = @["Welcome to nim universal-connectivity-app!"]
   ctx.data.inputBuffer = ""
-  ctx.data.p2pSwitch = SwitchBuilder.new()
+  ctx.data.switch = SwitchBuilder.new()
     .withRng(newRng())
     .withTcpTransport()
-    .withMplex()
+    .withYamux()
     .withNoise()
     .build()
 
@@ -149,7 +148,7 @@ proc initCtx(ctx: var nw.Context[State]) =
 # Async main loop
 # ------------------------
 
-proc runUi*(ctx: var nw.Context[State]) =
+proc runUi*(ctx: var nw.Context[State], conn: Connection) =
   var
     prevTb: iw.TerminalBuffer
     mouseQueue: Deque[iw.MouseInfo]
@@ -179,28 +178,34 @@ proc runUi*(ctx: var nw.Context[State]) =
     key = if keyQueue.len > 0: keyQueue.popFirst else: iw.Key.None
 
     # update peer list from switch
-    ctx.data.peers = ctx.data.p2pSwitch.peerInfo.addrs.mapIt($it)
+    ctx.data.peers = ctx.data.switch.peerInfo.addrs.mapIt($it)
 
     tick(ctx, mouse, key)
-    try:
-      iw.display(ctx.tb, prevTb)
-    except:
-      echo "Display error"
+    iw.display(ctx.tb, prevTb)
     prevTb = ctx.tb
 
     sleep(5)
 
-proc main*() {.async.} =
+# proc peer*(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
+proc peer*(peerId: PeerId) {.async.} =
   var ctx = nw.initContext[State]()
   initCtx(ctx)
-  await ctx.data.p2pSwitch.start()
+  await ctx.data.switch.start()
+  # connect to peer
+  # let conn = await ctx.data.switch.dial(peerId, addrs, GossipSubCodec_12)
+  let conn = await ctx.data.switch.dial(peerId, GossipSubCodec_12)
   try:
-    runUi(ctx)
+    runUi(ctx, conn)
   except Exception:
-    if ctx.data.p2pSwitch != nil:
-      await ctx.data.p2pSwitch.stop()
+    if ctx.data.switch != nil:
+      await ctx.data.switch.stop()
     deinit(ctx)
 
-when isMainModule:
-  waitFor main()
+proc cli(args: seq[string]) =
+  let peerId = PeerId.init(args[0]).get()
+  waitFor peer(peerId)
+  # let addresses = args[1..^1].mapIt(MultiAddress.init(it).get())
+  # waitFor peer(peerId, addresses)
 
+when isMainModule:
+  dispatch cli#, help={"peerIdStr": "12D3KooWCsw7PcEWuiYa45JaigaXSbo8YTAU5MyhHsHrJy", "multiaddresses": "/ip4/127.0.0.1/tcp/5559 /ip4/192.168.0.3/tcp/9995"}
