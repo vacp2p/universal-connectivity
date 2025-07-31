@@ -97,3 +97,9 @@ cargo run -- --help
 cd go-peer
 go run .
 ```
+
+## Getting started: Nim
+```
+cd nim-peer
+nimble run
+```
