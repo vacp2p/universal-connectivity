@@ -14,6 +14,12 @@ type
     inputBuffer*: string
     switch*: Switch
 
+const
+  GOSSIPSUB_CHAT_TOPIC: string = "universal-connectivity"
+  GOSSIPSUB_CHAT_FILE_TOPIC: string = "universal-connectivity-file"
+  GOSSIPSUB_PEER_DISCOVERY_TOPIC: string = "universal-connectivity-browser-peer-discovery"
+
+
 include nimwave/prelude
 
 proc addFocusArea(ctx: var nw.Context[State]): bool =
@@ -148,7 +154,7 @@ proc initCtx(ctx: var nw.Context[State]) =
 # Async main loop
 # ------------------------
 
-proc runUi*(ctx: var nw.Context[State], conn: Connection) =
+proc runUi*(ctx: var nw.Context[State], gossip: GossipSub) =
   var
     prevTb: iw.TerminalBuffer
     mouseQueue: Deque[iw.MouseInfo]
@@ -186,16 +192,24 @@ proc runUi*(ctx: var nw.Context[State], conn: Connection) =
 
     sleep(5)
 
-# proc peer*(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
-proc peer*(peerId: PeerId) {.async.} =
+proc peer*(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   var ctx = nw.initContext[State]()
   initCtx(ctx)
+  let gossip = GossipSub.init(switch = ctx.data.switch, triggerSelf = true)
+  ctx.data.switch.mount(gossip)
   await ctx.data.switch.start()
+
   # connect to peer
-  # let conn = await ctx.data.switch.dial(peerId, addrs, GossipSubCodec_12)
-  let conn = await ctx.data.switch.dial(peerId, GossipSubCodec_12)
+  await ctx.data.switch.connect(peerId, addrs)
+
+  await sleepAsync(3.seconds)
+  #discard await gossip.subscribe(GOSSIPSUB_CHAT_TOPIC)
+  #discard await gossip.subscribe(GOSSIPSUB_CHAT_FILE_TOPIC)
+  #discard await gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC)
+  discard await gossip.publish(GOSSIPSUB_CHAT_TOPIC, cast[seq[byte]](@"hello there"))
+  #let conn = await ctx.data.switch.dial(peerId, addrs, GossipSubCodec_12)
   try:
-    runUi(ctx, conn)
+    runUi(ctx, gossip)
   except Exception:
     if ctx.data.switch != nil:
       await ctx.data.switch.stop()
@@ -203,9 +217,8 @@ proc peer*(peerId: PeerId) {.async.} =
 
 proc cli(args: seq[string]) =
   let peerId = PeerId.init(args[0]).get()
-  waitFor peer(peerId)
-  # let addresses = args[1..^1].mapIt(MultiAddress.init(it).get())
-  # waitFor peer(peerId, addresses)
+  let addresses = args[1..^1].mapIt(MultiAddress.init(it).get())
+  waitFor peer(peerId, addresses)
 
 when isMainModule:
   dispatch cli#, help={"peerIdStr": "12D3KooWCsw7PcEWuiYa45JaigaXSbo8YTAU5MyhHsHrJy", "multiaddresses": "/ip4/127.0.0.1/tcp/5559 /ip4/192.168.0.3/tcp/9995"}
