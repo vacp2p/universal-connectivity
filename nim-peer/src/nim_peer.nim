@@ -24,33 +24,58 @@ type
   ChatPanel = ref object of nw.Node
   SystemPanel = ref object of nw.Node
 
-proc renderPanel*(node: nw.Node, ctx: var nw.Context[State], title: string, linesData: seq[string], width: Natural, height: Natural) =
+method render*(node: ChatPanel, ctx: var nw.Context[State]) =
+  let width = int(float(iw.width(ctx.tb))*0.6)
+  let height = int(float(iw.height(ctx.tb)) * 0.4)
+  # echo "chat panel"
+  # echo "width = " & $width & " height = " & $height
+  # echo "iw.height(ctx.tb) = " & $iw.height(ctx.tb)
+  # echo "iw.width(ctx.tb) = " & $iw.width(ctx.tb)
   ctx = nw.slice(ctx, 0, 0, width, height)
-  var lines = nw.seq(title) & nw.seq(linesData)
   render(
     nw.Box(
       border: nw.Border.Single,
       direction: nw.Direction.Vertical,
-      children: lines
+      children: nw.seq(ctx.data.messages)
     ),
     ctx
   )
 
-method render*(node: ChatPanel, ctx: var nw.Context[State]) =
-  let width = int(float(iw.width(ctx.tb))*0.6)
-  let height = int(float(iw.height(ctx.tb)) * 0.4)
-  renderPanel(node, ctx, "Chat", ctx.data.messages, width, height)
-
 method render*(node: PeersPanel, ctx: var nw.Context[State]) =
   let width = int(float(iw.width(ctx.tb))*0.3)
   let height = int(float(iw.height(ctx.tb)) * 0.4)
-  renderPanel(node, ctx, "Peers", ctx.data.peers, width, height)
+  # echo "peers panel"
+  # echo "width = " & $width & " height = " & $height
+  # echo "iw.height(ctx.tb) = " & $iw.height(ctx.tb)
+  # echo "iw.width(ctx.tb) = " & $iw.width(ctx.tb)
+  ctx = nw.slice(ctx, 0, 0, width, height)
+  render(
+    nw.Box(
+      id: "Peers",
+      border: nw.Border.Single,
+      direction: nw.Direction.Vertical,
+      children: nw.seq(ctx.data.peers)
+    ),
+    ctx
+  )
 
 
 method render*(node: SystemPanel, ctx: var nw.Context[State]) =
   let width = iw.width(ctx.tb)
   let height = int(float(iw.height(ctx.tb)) * 0.6)
-  renderPanel(node, ctx, "System", ctx.data.systemLogs, width, height)
+  # echo "system panel"
+  # echo "width = " & $width & " height = " & $height
+  # echo "iw.height(ctx.tb) = " & $iw.height(ctx.tb)
+  # echo "iw.width(ctx.tb) = " & $iw.width(ctx.tb)
+  ctx = nw.slice(ctx, 0, 0, width, height)
+  render(
+    nw.Box(
+      border: nw.Border.Single,
+      direction: nw.Direction.Vertical,
+      children: nw.seq(ctx.data.systemLogs)
+    ),
+    ctx
+  )
 
 proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerId]) {.async: (raises: [Exception]).} =
   var
@@ -95,7 +120,6 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
     elif key == iw.Key.Backspace and ctx.data.inputBuffer.len > 0:
       ctx.data.inputBuffer.setLen(ctx.data.inputBuffer.len - 1)
     elif key == iw.Key.Enter:
-      echo "runUI: publishing " & ctx.data.inputBuffer
       discard await gossip.publish(GOSSIPSUB_CHAT_TOPIC, cast[seq[byte]](@(ctx.data.inputBuffer)))
       ctx.data.messages.add("You: " & ctx.data.inputBuffer) # show message in ui
       ctx.data.inputBuffer = "" # clear input buffer
@@ -135,6 +159,7 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
     prevTb = ctx.tb
 
     sleep(5)
+    iw.clear(ctx.tb)
 
 proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   # setup peer
