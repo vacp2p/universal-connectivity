@@ -17,6 +17,8 @@ const
   GOSSIPSUB_CHAT_TOPIC: string = "universal-connectivity"
   GOSSIPSUB_CHAT_FILE_TOPIC: string = "universal-connectivity-file"
   GOSSIPSUB_PEER_DISCOVERY_TOPIC: string = "universal-connectivity-browser-peer-discovery"
+  PEERS_PANEL_WIDTH: int = 10
+  TOP_HEIGHT: int = 15
 
 
 include nimwave/prelude
@@ -27,13 +29,12 @@ type
   SystemPanel = ref object of nw.Node
 
 method render*(node: ChatPanel, ctx: var nw.Context[State]) =
-  let width = int(float(iw.width(ctx.tb))*0.6)
-  let height = int(float(iw.height(ctx.tb)) * 0.4)
-  # echo "chat panel"
-  # echo "width = " & $width & " height = " & $height
-  # echo "iw.height(ctx.tb) = " & $iw.height(ctx.tb)
-  # echo "iw.width(ctx.tb) = " & $iw.width(ctx.tb)
-  ctx = nw.slice(ctx, 0, 0, width, height)
+  let width =
+    if PEERS_PANEL_WIDTH < iw.width(ctx.tb):
+      iw.width(ctx.tb) - PEERS_PANEL_WIDTH
+    else:
+      iw.width(ctx.tb)
+  ctx = nw.slice(ctx, 0, 0, width, TOP_HEIGHT)
   render(
     nw.Box(
       border: nw.Border.Single,
@@ -44,16 +45,11 @@ method render*(node: ChatPanel, ctx: var nw.Context[State]) =
   )
 
 method render*(node: PeersPanel, ctx: var nw.Context[State]) =
-  let width = int(float(iw.width(ctx.tb))*0.3)
-  let height = int(float(iw.height(ctx.tb)) * 0.4)
-  # echo "peers panel"
-  # echo "width = " & $width & " height = " & $height
-  # echo "iw.height(ctx.tb) = " & $iw.height(ctx.tb)
-  # echo "iw.width(ctx.tb) = " & $iw.width(ctx.tb)
+  let width = PEERS_PANEL_WIDTH
+  let height = TOP_HEIGHT
   ctx = nw.slice(ctx, 0, 0, width, height)
   render(
     nw.Box(
-      id: "Peers",
       border: nw.Border.Single,
       direction: nw.Direction.Vertical,
       children: nw.seq(ctx.data.peers)
@@ -64,11 +60,11 @@ method render*(node: PeersPanel, ctx: var nw.Context[State]) =
 
 method render*(node: SystemPanel, ctx: var nw.Context[State]) =
   let width = iw.width(ctx.tb)
-  let height = int(float(iw.height(ctx.tb)) * 0.6)
-  # echo "system panel"
-  # echo "width = " & $width & " height = " & $height
-  # echo "iw.height(ctx.tb) = " & $iw.height(ctx.tb)
-  # echo "iw.width(ctx.tb) = " & $iw.width(ctx.tb)
+  let height =
+    if TOP_HEIGHT < iw.height(ctx.tb):
+      iw.height(ctx.tb) - TOP_HEIGHT
+    else:
+      iw.height(ctx.tb)
   ctx = nw.slice(ctx, 0, 0, width, height)
   render(
     nw.Box(
@@ -79,7 +75,13 @@ method render*(node: SystemPanel, ctx: var nw.Context[State]) =
     ctx
   )
 
-proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerId]) {.async: (raises: [Exception]).} =
+proc shortPeerId(peerId: PeerId): string {.raises: [ValueError].}=
+  let strPeerId = $peerId
+  if strPeerId.len < 7:
+    raise newException(ValueError, "PeerId too short")
+  strPeerId[^7..^1]
+
+proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerId], myPeerId: PeerId) {.async: (raises: [Exception]).} =
   var
     ctx = nw.initContext[State]()
     prevTb: iw.TerminalBuffer
@@ -93,13 +95,14 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
   except:
     echo "iw.init error"
   terminal.hideCursor()
-  ctx.data.peers =  @["Peers", ""]
+  ctx.data.peers =  @["Peers", "", shortPeerId(myPeerId) & " (You)"]
   ctx.data.messages = @["Chat", ""]
   ctx.data.systemLogs = @["System", ""]
   ctx.data.inputBuffer = ""
 
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
+  echo "width = " & $iw.width(ctx.tb) & " height = " & $iw.height(ctx.tb)
   # main UI tick comes here
   while true:
     key = iw.getKey(mouse)
@@ -201,9 +204,10 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC, handler1)
 
   try:
-    await runUI(gossip, recvQ, peerQ)
+    await runUI(gossip, recvQ, peerQ, switch.peerInfo.peerId)
     iw.deinit()
-  except:
+  except Exception as exc:
+    echo "runUI error: " & exc.msg
     discard
   finally:
     if switch != nil:
