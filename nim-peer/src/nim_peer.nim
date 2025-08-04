@@ -93,9 +93,9 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
   except:
     echo "iw.init error"
   terminal.hideCursor()
-  ctx.data.peers =  @[]
-  ctx.data.messages = @[]
-  ctx.data.systemLogs = @[]
+  ctx.data.peers =  @["Peers", ""]
+  ctx.data.messages = @["Chat", ""]
+  ctx.data.systemLogs = @["System", ""]
   ctx.data.inputBuffer = ""
 
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
