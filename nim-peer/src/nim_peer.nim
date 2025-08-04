@@ -3,6 +3,8 @@ from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
 import libp2p, cligen
+from libp2p/protocols/pubsub/rpc/message import Message
+
 
 type
   State* = object
@@ -182,18 +184,21 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
 
   await sleepAsync(3.seconds)
 
-  let handler1 = proc(topic: string, data: seq[byte]): Future[void] {.async, gcsafe.} =
-    let strData = cast[string](data)
-    await recvQ.put(strData)
-
   # register topic handlers
-  gossip.subscribe(GOSSIPSUB_CHAT_TOPIC, handler1)
+  # chat topic actually needs validator instead of handler
+  # validators allow us to get information about peers sending the messages
+  let validator1 = proc(topic: string, msg: Message): Future[ValidationResult] {.async, gcsafe.} =
+    let strMsg = cast[string](msg.data)
+    await recvQ.put($msg.fromPeer & ":" & strMsg)
+    return ValidationResult.Accept
+  gossip.subscribe(GOSSIPSUB_CHAT_TOPIC, nil)
+  gossip.addValidator(GOSSIPSUB_CHAT_TOPIC, validator1)
 
-  let handler2 = proc(topic: string, data: seq[byte]): Future[void] {.async, gcsafe.} =
+  # for peer discovery, we just need the message itself
+  let handler1 = proc(topic: string, data: seq[byte]): Future[void] {.async, gcsafe.} =
     let peerId: PeerId = switch.peerInfo.peerId # TODO: obtain peerId from data
     await peerQ.put(peerId)
-
-  gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC, handler2)
+  gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC, handler1)
 
   try:
     await runUI(gossip, recvQ, peerQ)
