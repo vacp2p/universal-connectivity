@@ -9,6 +9,7 @@ type
     peers*: seq[string]
     messages*: seq[string]
     inputBuffer*: string
+    systemLogs*: seq[string]
 
 const
   GOSSIPSUB_CHAT_TOPIC: string = "universal-connectivity"
@@ -20,35 +21,36 @@ include nimwave/prelude
 
 type
   PeersPanel = ref object of nw.Node
-  MessagesPanel = ref object of nw.Node
+  ChatPanel = ref object of nw.Node
+  SystemPanel = ref object of nw.Node
 
-proc renderPanel*(node: nw.Node, ctx: var nw.Context[State], title: string, linesData: seq[string], heightRatio: float) =
-  let width = iw.width(ctx.tb)
-  let height = int(float(iw.height(ctx.tb)) * heightRatio)
+proc renderPanel*(node: nw.Node, ctx: var nw.Context[State], title: string, linesData: seq[string], width: Natural, height: Natural) =
   ctx = nw.slice(ctx, 0, 0, width, height)
   var lines = nw.seq(title) & nw.seq(linesData)
   render(
     nw.Box(
+      border: nw.Border.Single,
       direction: nw.Direction.Vertical,
       children: lines
     ),
     ctx
   )
 
-method render*(node: PeersPanel, ctx: var nw.Context[State]) =
-  renderPanel(node, ctx, "Peers:", ctx.data.peers, 0.2)
-
-method render*(node: MessagesPanel, ctx: var nw.Context[State]) =
-  let width = iw.width(ctx.tb)
+method render*(node: ChatPanel, ctx: var nw.Context[State]) =
+  let width = int(float(iw.width(ctx.tb))*0.6)
   let height = int(float(iw.height(ctx.tb)) * 0.4)
-  ctx = nw.slice(ctx, 0, 0, width, height)
-  render(
-    nw.Box(
-      direction: nw.Direction.Vertical,
-      children: nw.seq("Messages:") & nw.seq(ctx.data.messages) & nw.seq("> " & ctx.data.inputBuffer)
-    ),
-    ctx
-  )
+  renderPanel(node, ctx, "Chat", ctx.data.messages, width, height)
+
+method render*(node: PeersPanel, ctx: var nw.Context[State]) =
+  let width = int(float(iw.width(ctx.tb))*0.3)
+  let height = int(float(iw.height(ctx.tb)) * 0.4)
+  renderPanel(node, ctx, "Peers", ctx.data.peers, width, height)
+
+
+method render*(node: SystemPanel, ctx: var nw.Context[State]) =
+  let width = iw.width(ctx.tb)
+  let height = int(float(iw.height(ctx.tb)) * 0.6)
+  renderPanel(node, ctx, "System", ctx.data.systemLogs, width, height)
 
 proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerId]) {.async: (raises: [Exception]).} =
   var
@@ -66,6 +68,7 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
   terminal.hideCursor()
   ctx.data.peers =  @[]
   ctx.data.messages = @[]
+  ctx.data.systemLogs = @[]
   ctx.data.inputBuffer = ""
 
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
@@ -85,6 +88,7 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
     mouse = if mouseQueue.len > 0: mouseQueue.popFirst else: iw.MouseInfo()
     key = if keyQueue.len > 0: keyQueue.popFirst else: iw.Key.None
 
+    var msgFromMe = false
     # process key if typed
     if key in {iw.Key.Space .. iw.Key.Tilde}:
       ctx.data.inputBuffer.add(cast[char](key.ord))
@@ -95,6 +99,7 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
       discard await gossip.publish(GOSSIPSUB_CHAT_TOPIC, cast[seq[byte]](@(ctx.data.inputBuffer)))
       ctx.data.messages.add("You: " & ctx.data.inputBuffer) # show message in ui
       ctx.data.inputBuffer = "" # clear input buffer
+      msgFromMe = true
     elif key != iw.Key.None:
       discard
 
@@ -106,16 +111,20 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
 
     # update messages if there's a new message from recvQ
     if recvQ.len != 0:
-      # TODO: print peer where msg is coming from
-      # TODO: if (see if msg is mine or peer, if mine, skip)
-      ctx.data.messages.add("peer: " & await recvQ.get()) # show message in ui
+      let msg = recvQ.get()
+      if not msgFromMe:
+        # TODO: print peer where msg is coming from
+        ctx.data.messages.add("peer: " & await recvQ.get()) # show message in ui
 
     renderRoot(
       nw.Box(
         direction: nw.Direction.Vertical,
         children: nw.seq(
-          nw.Box(direction: nw.Direction.Horizontal, children: nw.seq(PeersPanel())),
-          MessagesPanel()
+          nw.Box(
+            direction: nw.Direction.Horizontal,
+            children: nw.seq(ChatPanel(), PeersPanel())
+          ),
+          SystemPanel()
         )
       ),
       ctx
@@ -126,9 +135,6 @@ proc runUI(gossip: GossipSub, recvQ: AsyncQueue[string], peerQ: AsyncQueue[PeerI
     prevTb = ctx.tb
 
     sleep(5)
-
-  iw.deinit()
-  terminal.showCursor()
 
 proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   # setup peer
@@ -143,8 +149,8 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   switch.mount(gossip)
   await switch.start()
 
-  let recvQ = newAsyncQueue[string](64)
-  let peerQ = newAsyncQueue[PeerId](64)
+  let recvQ = newAsyncQueue[string](0)
+  let peerQ = newAsyncQueue[PeerId](0)
 
   # connect to peer
   await switch.connect(peerId, addrs)
@@ -164,19 +170,21 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
 
   gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC, handler2)
 
-  #discard await gossip.subscribe(GOSSIPSUB_CHAT_FILE_TOPIC)
-
-  # runForever()
-
-  var futures: seq[Future[void]] = @[]
-  futures.add(runUI(gossip, recvQ, peerQ))
-
-  await allFutures(futures)
-
-  #if switch != nil:
-  #  await switch.stop()
+  try:
+    await runUI(gossip, recvQ, peerQ)
+    iw.deinit()
+  except:
+    discard
+  finally:
+    if switch != nil:
+      await switch.stop()
+    terminal.showCursor()
 
 proc cli(args: seq[string]) =
+  if args.len < 2:
+    # print usage
+    echo "usage: nimble run -- <peer_id> <multiaddress>, [<multiaddresss>, ...]"
+    return
   let peerId = PeerId.init(args[0]).get()
   let addrs = args[1..^1].mapIt(MultiAddress.init(it).get())
   waitFor start(peerId, addrs)
