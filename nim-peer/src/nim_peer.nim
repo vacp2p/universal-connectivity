@@ -17,7 +17,8 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
     .withYamux()
     .withNoise()
     .build()
-  let gossip = GossipSub.init(switch = switch, triggerSelf = true)
+  let gossip =
+    GossipSub.init(switch = switch, triggerSelf = true, verifySignature = false)
   switch.mount(gossip)
   await switch.start()
 
@@ -36,7 +37,7 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
       topic: string, msg: Message
   ): Future[ValidationResult] {.async, gcsafe.} =
     let strMsg = cast[string](msg.data)
-    await recvQ.put($msg.fromPeer & ":" & strMsg)
+    await recvQ.put($msg.fromPeer & ": " & strMsg)
     return ValidationResult.Accept
   gossip.subscribe(GOSSIPSUB_CHAT_TOPIC, nil)
   gossip.addValidator(GOSSIPSUB_CHAT_TOPIC, validator1)
@@ -58,17 +59,13 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
       await switch.stop()
     terminal.showCursor()
 
-proc cli(peerId: string, multiaddresses: seq[string]) =
-  if multiaddresses.len == 0:
+proc cli(args: seq[string]) =
+  if args.len < 2:
     echo "usage: nimble run -- <peer_id> <multiaddress>, [<multiaddresss>, ...]"
     return
-  let peerId = PeerId.init(peerId).get()
-  let addrs = multiaddresses.mapIt(MultiAddress.init(it).get())
+  let peerId = PeerId.init(args[0]).get()
+  let addrs = args[1 ..^ 1].mapIt(MultiAddress.init(it).get())
   waitFor start(peerId, addrs)
 
 when isMainModule:
-  dispatch cli,
-    help = {
-      "peerId": "12D3KooWCsw7PcEWuiYa45JaigaXSbo8YTAU5MyhHsHrJy",
-      "multiaddresses": "/ip4/127.0.0.1/tcp/5559 /ip4/192.168.0.3/tcp/9995",
-    }
+  dispatch cli

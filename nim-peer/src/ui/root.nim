@@ -76,6 +76,9 @@ proc shortPeerId(peerId: PeerId): string {.raises: [ValueError].} =
     raise newException(ValueError, "PeerId too short")
   strPeerId[^7 ..^ 1]
 
+proc asyncGetKey(stdinReader: StreamTransport): Future[iw.Key] {.async.} =
+  await stdinReader.readKey()
+
 proc runUI*(
     gossip: GossipSub,
     recvQ: AsyncQueue[string],
@@ -102,9 +105,13 @@ proc runUI*(
 
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
+  # Pipe to read stdin from main thread
+  let (rfd, wfd) = createAsyncPipe()
+  let stdinReader = fromPipe(rfd)
+
   # main UI tick comes here
   while true:
-    key = iw.getKey(mouse)
+    key = await asyncGetKey(stdinReader)
     if key == iw.Key.Mouse:
       mouseQueue.addLast(mouse)
       case mouse.scrollDir
@@ -147,29 +154,30 @@ proc runUI*(
       ctx.data.peers.add($newPeer)
 
     # update messages if there's a new message from recvQ
-    if recvQ.len != 0:
-      let msg = recvQ.get()
+    if not recvQ.empty():
+      let msg = await recvQ.get()
+      echo "received msg: " & msg
       if not msgFromMe:
         # TODO: print peer where msg is coming from
-        ctx.data.messages.add("peer: " & await recvQ.get()) # show message in ui
+        ctx.data.messages.add(msg) # show message in ui
 
-    renderRoot(
-      nw.Box(
-        direction: nw.Direction.Vertical,
-        children: nw.seq(
-          nw.Box(
-            direction: nw.Direction.Horizontal,
-            children: nw.seq(ChatPanel(), PeersPanel()),
-          ),
-          SystemPanel(),
-        ),
-      ),
-      ctx,
-    )
+    # renderRoot(
+    #   nw.Box(
+    #     direction: nw.Direction.Vertical,
+    #     children: nw.seq(
+    #       nw.Box(
+    #         direction: nw.Direction.Horizontal,
+    #         children: nw.seq(ChatPanel(), PeersPanel()),
+    #       ),
+    #       SystemPanel(),
+    #     ),
+    #   ),
+    #   ctx,
+    # )
 
-    # render
-    iw.display(ctx.tb, prevTb)
-    prevTb = ctx.tb
+#     # render
+#     iw.display(ctx.tb, prevTb)
+#     prevTb = ctx.tb
 
-    sleep(5)
-    iw.clear(ctx.tb)
+#     sleep(50)
+#     iw.clear(ctx.tb)
