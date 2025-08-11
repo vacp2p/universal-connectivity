@@ -22,8 +22,8 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   switch.mount(gossip)
   await switch.start()
 
-  let recvQ = newAsyncQueue[string](0)
-  let peerQ = newAsyncQueue[PeerId](0)
+  let recvQ = newAsyncQueue[string]()
+  let peerQ = newAsyncQueue[PeerId]()
 
   # connect to peer
   await switch.connect(peerId, addrs)
@@ -37,7 +37,7 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
       topic: string, msg: Message
   ): Future[ValidationResult] {.async, gcsafe.} =
     let strMsg = cast[string](msg.data)
-    await recvQ.put($msg.fromPeer & ": " & strMsg)
+    await recvQ.put(shortPeerId(msg.fromPeer) & ": " & strMsg)
     return ValidationResult.Accept
   gossip.subscribe(GOSSIPSUB_CHAT_TOPIC, nil)
   gossip.addValidator(GOSSIPSUB_CHAT_TOPIC, validator1)
