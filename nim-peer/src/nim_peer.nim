@@ -8,6 +8,8 @@ from libp2p/protocols/pubsub/rpc/message import Message
 import ./ui/root
 import ./utils
 
+const MAX_FILE_SIZE: int = 1024 # 1KiB
+
 proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   # setup peer
   let switch = SwitchBuilder
@@ -28,25 +30,55 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   # connect to peer
   await switch.connect(peerId, addrs)
 
+  # wait so that gossipsub can form mesh
   await sleepAsync(3.seconds)
 
-  # register topic handlers
-  # chat topic actually needs validator instead of handler
-  # validators allow us to get information about peers sending the messages
-  let validator1 = proc(
+  # topic handlers
+  # chat and file handlers actually need to be validators instead of regular handlers
+  # validators allow us to get information about which peer sent a message
+  let onChatMsg = proc(
       topic: string, msg: Message
   ): Future[ValidationResult] {.async, gcsafe.} =
     let strMsg = cast[string](msg.data)
     await recvQ.put(shortPeerId(msg.fromPeer) & ": " & strMsg)
+    await peerQ.put(msg.fromPeer)
     return ValidationResult.Accept
-  gossip.subscribe(GOSSIPSUB_CHAT_TOPIC, nil)
-  gossip.addValidator(GOSSIPSUB_CHAT_TOPIC, validator1)
 
-  # for peer discovery, we just need the message itself
-  let handler1 = proc(topic: string, data: seq[byte]): Future[void] {.async, gcsafe.} =
+  # when a new file is announced, download it
+  let onNewFile = proc(
+      topic: string, msg: Message
+  ): Future[ValidationResult] {.async, gcsafe.} =
+    let fileId = msg.data
+    # use known addresses since we can't use kad to get peer addrs
+    # this means that we're unable to get files from a peer to which we don't have the addresses
+    let conn = await switch.dial(msg.fromPeer, addrs, "/universal-connectivity-file/1")
+    defer: await conn.close()
+    # Request file
+    await conn.writeLp(fileId)
+    # Read file contents
+    let fileContents = await conn.readLp(MAX_FILE_SIZE)
+    # TODO: do sth with file
+    let strFile = cast[string](fileContents)
+    echo "downloaded file: " & strFile
+    return ValidationResult.Accept
+
+  # when a new peer is announced
+  let onNewPeer = proc(topic: string, data: seq[byte]): Future[void] {.async, gcsafe.} =
     let peerId: PeerId = switch.peerInfo.peerId # TODO: obtain peerId from data
     await peerQ.put(peerId)
-  gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC, handler1)
+
+  # register validators and handlers
+
+  # chat messages
+  gossip.subscribe(GOSSIPSUB_CHAT_TOPIC, nil)
+  gossip.addValidator(GOSSIPSUB_CHAT_TOPIC, onChatMsg)
+
+  # files
+  gossip.subscribe(GOSSIPSUB_CHAT_FILE_TOPIC, nil)
+  gossip.addValidator(GOSSIPSUB_CHAT_FILE_TOPIC, onNewFile)
+
+  # peer discovery
+  gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC, onNewPeer)
 
   try:
     await runUI(gossip, recvQ, peerQ, switch.peerInfo.peerId)

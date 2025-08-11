@@ -96,6 +96,8 @@ proc runUI*(
 
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
+  # TODO: publish my peerid in peerid topic
+
   while true:
     key = iw.getKey(mouse)
     if key == iw.Key.Mouse:
@@ -123,6 +125,8 @@ proc runUI*(
     elif key == iw.Key.Backspace and ctx.data.inputBuffer.len > 0:
       ctx.data.inputBuffer.setLen(ctx.data.inputBuffer.len - 1)
     elif key == iw.Key.Enter:
+      # TODO: handle /file command to send/publish files
+      # /file filename (registers ID in local database, sends fileId, handles incoming file requests)
       discard await gossip.publish(
         GOSSIPSUB_CHAT_TOPIC, cast[seq[byte]](@(ctx.data.inputBuffer))
       )
@@ -135,7 +139,8 @@ proc runUI*(
     if peerQ.len != 0:
       # TODO: handle peer removals
       let newPeer = await peerQ.get()
-      ctx.data.peers.add($newPeer)
+      if not ctx.data.peers.contains(shortPeerId(newPeer)):
+        ctx.data.peers.add(shortPeerId(newPeer))
 
     # update messages if there's a new message from recvQ
     if not recvQ.empty():
