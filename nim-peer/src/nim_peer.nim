@@ -1,16 +1,16 @@
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from terminal import nil
 
+import std/sha1
 import chronos, tables, deques, strutils, sequtils
 import libp2p, cligen
 from libp2p/protocols/pubsub/rpc/message import Message
 
 import ./ui/root
 import ./utils
+import ./file_exchange
 
-const MAX_FILE_SIZE: int = 1024 # 1KiB
-
-proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
+proc start(peerId: PeerId, addrs: seq[MultiAddress], room: string) {.async.} =
   # setup peer
   let switch = SwitchBuilder
     .new()
@@ -22,6 +22,10 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   let gossip =
     GossipSub.init(switch = switch, triggerSelf = true, verifySignature = false)
   switch.mount(gossip)
+
+  let fileExchange = FileExchange.new()
+  switch.mount(fileExchange)
+
   await switch.start()
 
   let recvQ = newAsyncQueue[string]()
@@ -48,18 +52,17 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   let onNewFile = proc(
       topic: string, msg: Message
   ): Future[ValidationResult] {.async, gcsafe.} =
-    let fileId = msg.data
+    let fileId = cast[string](msg.data)
     # use known addresses since we can't use kad to get peer addrs
     # this means that we're unable to get files from a peer to which we don't have the addresses
-    let conn = await switch.dial(msg.fromPeer, addrs, "/universal-connectivity-file/1")
-    defer: await conn.close()
-    # Request file
-    await conn.writeLp(fileId)
-    # Read file contents
-    let fileContents = await conn.readLp(MAX_FILE_SIZE)
-    # TODO: do sth with file
-    let strFile = cast[string](fileContents)
-    echo "downloaded file: " & strFile
+    let conn = await switch.dial(msg.fromPeer, addrs, FileExchangeCodec)
+    # TODO: path appending is unsafe  (sanitize)
+    let filePath = "/tmp/" & fileId
+    let fileContents = await fileExchange.requestFile(conn, fileId)
+    writeFile(filePath, fileContents)
+    await conn.close()
+    # Save file in /tmp/fileId
+    echo "Downloaded file to " & filePath
     return ValidationResult.Accept
 
   # when a new peer is announced
@@ -70,18 +73,18 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
   # register validators and handlers
 
   # chat messages
-  gossip.subscribe(GOSSIPSUB_CHAT_TOPIC, nil)
-  gossip.addValidator(GOSSIPSUB_CHAT_TOPIC, onChatMsg)
+  gossip.subscribe(room, nil)
+  gossip.addValidator(room, onChatMsg)
 
   # files
-  gossip.subscribe(GOSSIPSUB_CHAT_FILE_TOPIC, nil)
-  gossip.addValidator(GOSSIPSUB_CHAT_FILE_TOPIC, onNewFile)
+  gossip.subscribe(ChatFileTopic, nil)
+  gossip.addValidator(ChatFileTopic, onNewFile)
 
   # peer discovery
-  gossip.subscribe(GOSSIPSUB_PEER_DISCOVERY_TOPIC, onNewPeer)
+  gossip.subscribe(PeerDiscoveryTopic, onNewPeer)
 
   try:
-    await runUI(gossip, recvQ, peerQ, switch.peerInfo.peerId)
+    await runUI(gossip, room, recvQ, peerQ, switch.peerInfo.peerId)
     iw.deinit()
   except Exception as exc:
     echo "runUI error: " & exc.msg
@@ -91,13 +94,13 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress]) {.async.} =
       await switch.stop()
     terminal.showCursor()
 
-proc cli(args: seq[string]) =
+proc cli(room=ChatTopic, args: seq[string]) =
   if args.len < 2:
     echo "usage: nimble run -- <peer_id> <multiaddress>, [<multiaddresss>, ...]"
     return
   let peerId = PeerId.init(args[0]).get()
   let addrs = args[1 ..^ 1].mapIt(MultiAddress.init(it).get())
-  waitFor start(peerId, addrs)
+  waitFor start(peerId, addrs, room)
 
 when isMainModule:
   dispatch cli

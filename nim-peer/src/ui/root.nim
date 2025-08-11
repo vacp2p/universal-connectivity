@@ -16,8 +16,8 @@ type State = object
 include nimwave/prelude
 
 const
-  PEERS_PANEL_WIDTH: int = 10
-  TOP_HEIGHT: int = 15
+  PeersPanelWidth: int = 10
+  TopHeight: int = 15
 
 type
   PeersPanel = ref object of nw.Node
@@ -26,11 +26,11 @@ type
 
 method render(node: ChatPanel, ctx: var nw.Context[State]) =
   let width =
-    if PEERS_PANEL_WIDTH < iw.width(ctx.tb):
-      iw.width(ctx.tb) - PEERS_PANEL_WIDTH
+    if PeersPanelWidth < iw.width(ctx.tb):
+      iw.width(ctx.tb) - PeersPanelWidth
     else:
       iw.width(ctx.tb)
-  ctx = nw.slice(ctx, 0, 0, width, TOP_HEIGHT)
+  ctx = nw.slice(ctx, 0, 0, width, TopHeight)
   render(
     nw.Box(
       border: nw.Border.Single,
@@ -41,8 +41,8 @@ method render(node: ChatPanel, ctx: var nw.Context[State]) =
   )
 
 method render(node: PeersPanel, ctx: var nw.Context[State]) =
-  let width = PEERS_PANEL_WIDTH
-  let height = TOP_HEIGHT
+  let width = PeersPanelWidth
+  let height = TopHeight
   ctx = nw.slice(ctx, 0, 0, width, height)
   render(
     nw.Box(
@@ -56,8 +56,8 @@ method render(node: PeersPanel, ctx: var nw.Context[State]) =
 method render(node: SystemPanel, ctx: var nw.Context[State]) =
   let width = iw.width(ctx.tb)
   let height =
-    if TOP_HEIGHT < iw.height(ctx.tb):
-      iw.height(ctx.tb) - TOP_HEIGHT
+    if TopHeight < iw.height(ctx.tb):
+      iw.height(ctx.tb) - TopHeight
     else:
       iw.height(ctx.tb)
   ctx = nw.slice(ctx, 0, 0, width, height)
@@ -72,6 +72,7 @@ method render(node: SystemPanel, ctx: var nw.Context[State]) =
 
 proc runUI*(
     gossip: GossipSub,
+    room: string,
     recvQ: AsyncQueue[string],
     peerQ: AsyncQueue[PeerId],
     myPeerId: PeerId,
@@ -128,7 +129,7 @@ proc runUI*(
       # TODO: handle /file command to send/publish files
       # /file filename (registers ID in local database, sends fileId, handles incoming file requests)
       discard await gossip.publish(
-        GOSSIPSUB_CHAT_TOPIC, cast[seq[byte]](@(ctx.data.inputBuffer))
+        room, cast[seq[byte]](@(ctx.data.inputBuffer))
       )
       ctx.data.messages.add("You: " & ctx.data.inputBuffer) # show message in ui
       ctx.data.inputBuffer = "" # clear input buffer
