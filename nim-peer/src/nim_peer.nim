@@ -10,7 +10,9 @@ import ./ui/root
 import ./utils
 import ./file_exchange
 
-proc start(peerId: PeerId, addrs: seq[MultiAddress], room: string) {.async.} =
+proc start(
+    peerId: PeerId, addrs: seq[MultiAddress], headless: bool, room: string
+) {.async.} =
   # setup peer
   let switch = SwitchBuilder
     .new()
@@ -84,23 +86,26 @@ proc start(peerId: PeerId, addrs: seq[MultiAddress], room: string) {.async.} =
   gossip.subscribe(PeerDiscoveryTopic, onNewPeer)
 
   try:
-    await runUI(gossip, room, recvQ, peerQ, switch.peerInfo.peerId)
-    iw.deinit()
+    if headless:
+      runForever()
+    else:
+      await runUI(gossip, room, recvQ, peerQ, switch.peerInfo.peerId)
+      iw.deinit()
   except Exception as exc:
-    echo "runUI error: " & exc.msg
+    echo "running error: " & exc.msg
     discard
   finally:
     if switch != nil:
       await switch.stop()
     terminal.showCursor()
 
-proc cli(room=ChatTopic, args: seq[string]) =
+proc cli(room = ChatTopic, headless = false, args: seq[string]) =
   if args.len < 2:
-    echo "usage: nimble run -- <peer_id> <multiaddress>, [<multiaddresss>, ...]"
+    echo "usage: nimble run -- <peer_id> <multiaddress>, [<multiaddresss>, ...] [--room <room-name>] [--headless]"
     return
   let peerId = PeerId.init(args[0]).get()
   let addrs = args[1 ..^ 1].mapIt(MultiAddress.init(it).get())
-  waitFor start(peerId, addrs, room)
+  waitFor start(peerId, addrs, headless, room)
 
 when isMainModule:
   dispatch cli
