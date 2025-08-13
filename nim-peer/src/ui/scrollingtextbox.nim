@@ -33,20 +33,28 @@ proc formatText(node: ScrollingTextBox): seq[string] =
   result.add(node.title.alignLeft(node.width))
   # empty line after title
   result.add(" ".alignLeft(node.width))
-  for i in 0 ..< node.height - 2:
+  for i in node.startingLine ..< node.startingLine + node.height - 2:
     if i < node.text.len:
       result.add(node.text[i].alignLeft(node.width))
     else:
       result.add(" ".alignLeft(node.width))
 
-proc scrollUp*(node: ScrollingTextBox, size: int) =
-  node.startingLine = max(node.startingLine - size, 0)
+proc scrollUp*(node: ScrollingTextBox, speed: int) =
+  node.startingLine = max(node.startingLine - speed, 0)
 
-proc scrollDown*(node: ScrollingTextBox, size: int) =
-  node.startingLine = min(node.startingLine + size, node.text.len)
+proc scrollDown*(node: ScrollingTextBox, speed: int) =
+  node.startingLine = min(node.startingLine + speed, node.text.len - node.height + 2)
+
+proc tail(node: ScrollingTextBox) =
+  ## focuses window in lowest frame
+  node.startingLine = max(0, node.text.len - node.height + 2)
+
+proc push*(node: ScrollingTextBox, newLine: string) =
+  node.text.add(newLine)
+  node.tail()
 
 method render(node: ScrollingTextBox, ctx: var nw.Context[State]) =
-  ctx = nw.slice(ctx, 0, 0, node.width, node.height)
+  ctx = nw.slice(ctx, 0, 0, node.width + 2, node.height + 2)
   render(
     nw.Box(
       border: nw.Border.Single,

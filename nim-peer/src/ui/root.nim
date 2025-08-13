@@ -12,6 +12,7 @@ const
   InputPanelHeight: int = 3
   PeersPanelWidth: int = 20
   TopHeight: int = 25
+  ScrollSpeed: int = 2
 
 type InputPanel = ref object of nw.Node
 
@@ -72,11 +73,12 @@ proc runUI*(
     key = iw.getKey(mouse)
     if key == iw.Key.Mouse:
       mouseQueue.addLast(mouse)
+      # TODO: after focus is done, scroll focused field
       case mouse.scrollDir
       of iw.ScrollDirection.sdUp:
-        keyQueue.addLast(iw.Key.Up)
+        chatPanel.scrollUp(ScrollSpeed)
       of iw.ScrollDirection.sdDown:
-        keyQueue.addLast(iw.Key.Down)
+        chatPanel.scrollDown(ScrollSpeed)
       else:
         discard
     elif key != iw.Key.None:
@@ -98,7 +100,7 @@ proc runUI*(
       # TODO: handle /file command to send/publish files
       # /file filename (registers ID in local database, sends fileId, handles incoming file requests)
       discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
-      chatPanel.text.add("You: " & ctx.data.inputBuffer) # show message in ui
+      chatPanel.push("You: " & ctx.data.inputBuffer) # show message in ui
       ctx.data.inputBuffer = "" # clear input buffer
     elif key != iw.Key.None:
       discard
@@ -108,17 +110,17 @@ proc runUI*(
       # TODO: handle peer removals
       let newPeer = await peerQ.get()
       if not peersPanel.text.contains(shortPeerId(newPeer)):
-        peersPanel.text.add(shortPeerId(newPeer))
+        peersPanel.push(shortPeerId(newPeer))
 
     # update messages if there's a new message from recvQ
     if not recvQ.empty():
       let msg = await recvQ.get()
-      chatPanel.text.add(msg) # show message in ui
+      chatPanel.push(msg) # show message in ui
 
     # update messages if there's a new message from recvQ
     if not systemQ.empty():
       let msg = await systemQ.get()
-      systemPanel.text.add(msg) # show message in ui
+      systemPanel.push(msg) # show message in ui
 
     renderRoot(
       nw.Box(
@@ -140,4 +142,3 @@ proc runUI*(
     ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
     await sleepAsync(5.milliseconds)
-    # iw.clear(ctx.tb)
