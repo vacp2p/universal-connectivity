@@ -13,24 +13,31 @@ type ScrollingTextBox* = ref object of nw.Node
 proc new*(
     T: typedesc[ScrollingTextBox],
     title: string = "",
-    width: int = 1,
-    height: int = 1,
+    width: int = 3,
+    height: int = 3,
     text: seq[string] = @[],
 ): T =
+  var height = height
+  if height < 3:
+    height = 3
+  var width = width
+  if width < 3:
+    width = 3
+  # height and width - 2 to account for size of box lines (top and botton)
   ScrollingTextBox(
-    title: title, width: width, height: height, text: text, startingLine: 0
+    title: title, width: width - 2, height: height - 2, text: text, startingLine: 0
   )
 
 proc formatText(node: ScrollingTextBox): seq[string] =
   result = @[]
-  result.add(node.title.alignLeft(node.width - 2))
+  result.add(node.title.alignLeft(node.width))
   # empty line after title
-  result.add(" ".alignLeft(node.width - 2))
+  result.add(" ".alignLeft(node.width))
   for i in 0 ..< node.height - 2:
     if i < node.text.len:
-      result.add(node.text[i].alignLeft(node.width - 2))
+      result.add(node.text[i].alignLeft(node.width))
     else:
-      result.add(" ".alignLeft(node.width - 2))
+      result.add(" ".alignLeft(node.width))
 
 proc scrollUp*(node: ScrollingTextBox, size: int) =
   node.startingLine = max(node.startingLine - size, 0)

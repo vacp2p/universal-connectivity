@@ -29,8 +29,10 @@ proc start(
 
   await switch.start()
 
-  let recvQ = newAsyncQueue[string]()
-  let peerQ = newAsyncQueue[PeerId]()
+  let
+    recvQ = newAsyncQueue[string]()
+    peerQ = newAsyncQueue[PeerId]()
+    systemQ = newAsyncQueue[string]()
 
   # connect to peer
   try:
@@ -53,6 +55,10 @@ proc start(
     let strMsg = cast[string](msg.data)
     await recvQ.put(shortPeerId(msg.fromPeer) & ": " & strMsg)
     await peerQ.put(msg.fromPeer)
+    await systemQ.put("received message")
+    await systemQ.put("\t source: " & $msg.fromPeer)
+    await systemQ.put("\t topic: " & $topic)
+    await systemQ.put("\t seqno: " & $msg.seqno)
     return ValidationResult.Accept
 
   # when a new file is announced, download it
@@ -68,13 +74,14 @@ proc start(
     writeFile(filePath, fileContents)
     await conn.close()
     # Save file in /tmp/fileId
-    echo "Downloaded file to " & filePath
+    await systemQ.put("Downloaded file to " & filePath)
     return ValidationResult.Accept
 
   # when a new peer is announced
   let onNewPeer = proc(topic: string, data: seq[byte]) {.async, gcsafe.} =
     let peerId: PeerId = switch.peerInfo.peerId # TODO: obtain peerId from data
     await peerQ.put(peerId)
+    await systemQ.put("New peer " & $peerId)
 
   # register validators and handlers
 
@@ -93,7 +100,7 @@ proc start(
     if headless:
       runForever()
     else:
-      await runUI(gossip, room, recvQ, peerQ, switch.peerInfo.peerId)
+      await runUI(gossip, room, recvQ, peerQ, systemQ, switch.peerInfo.peerId)
       iw.deinit()
   except Exception as exc:
     error "Unexpected error", error = exc.msg

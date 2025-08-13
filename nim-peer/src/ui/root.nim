@@ -10,13 +10,13 @@ import ../utils
 
 const
   InputPanelHeight: int = 3
-  PeersPanelWidth: int = 10
-  TopHeight: int = 15
+  PeersPanelWidth: int = 20
+  TopHeight: int = 25
 
 type InputPanel = ref object of nw.Node
 
 method render(node: InputPanel, ctx: var nw.Context[State]) =
-  ctx = nw.slice(ctx, 0, 0, iw.width(ctx.tb) - 3, InputPanelHeight)
+  ctx = nw.slice(ctx, 0, 0, iw.width(ctx.tb), InputPanelHeight)
   render(
     nw.Box(
       border: nw.Border.Single,
@@ -31,6 +31,7 @@ proc runUI*(
     room: string,
     recvQ: AsyncQueue[string],
     peerQ: AsyncQueue[PeerId],
+    systemQ: AsyncQueue[string],
     myPeerId: PeerId,
 ) {.async: (raises: [Exception]).} =
   var
@@ -41,6 +42,7 @@ proc runUI*(
     mouse: iw.MouseInfo
     key: iw.Key
   terminal.enableTrueColors()
+  terminal.hideCursor()
   try:
     iw.init()
   except:
@@ -102,7 +104,7 @@ proc runUI*(
       discard
 
     # update peer list if there's a new peer from peerQ
-    if peerQ.len != 0:
+    if not peerQ.empty():
       # TODO: handle peer removals
       let newPeer = await peerQ.get()
       if not peersPanel.text.contains(shortPeerId(newPeer)):
@@ -112,6 +114,11 @@ proc runUI*(
     if not recvQ.empty():
       let msg = await recvQ.get()
       chatPanel.text.add(msg) # show message in ui
+
+    # update messages if there's a new message from recvQ
+    if not systemQ.empty():
+      let msg = await systemQ.get()
+      systemPanel.text.add(msg) # show message in ui
 
     renderRoot(
       nw.Box(
@@ -130,6 +137,7 @@ proc runUI*(
     # render
     iw.display(ctx.tb, prevTb)
     prevTb = ctx.tb
+    ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
     await sleepAsync(5.milliseconds)
-    iw.clear(ctx.tb)
+    # iw.clear(ctx.tb)
