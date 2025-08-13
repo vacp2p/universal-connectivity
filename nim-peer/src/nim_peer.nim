@@ -1,9 +1,9 @@
-import std/sha1, tables, deques, strutils, sequtils, os
+import tables, deques, strutils, sequtils, os
 
-from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
-from terminal import nil
 import libp2p, chronos, cligen, chronicles
 from libp2p/protocols/pubsub/rpc/message import Message
+
+from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 
 import ./ui/root
 import ./utils
@@ -37,7 +37,6 @@ proc start(
     await switch.connect(peerId, addrs)
   except Exception as exc:
     error "Connection error", error = exc.msg
-  finally:
     if switch != nil:
       await switch.stop()
     return
@@ -73,7 +72,7 @@ proc start(
     return ValidationResult.Accept
 
   # when a new peer is announced
-  let onNewPeer = proc(topic: string, data: seq[byte]): Future[void] {.async, gcsafe.} =
+  let onNewPeer = proc(topic: string, data: seq[byte]) {.async, gcsafe.} =
     let peerId: PeerId = switch.peerInfo.peerId # TODO: obtain peerId from data
     await peerQ.put(peerId)
 

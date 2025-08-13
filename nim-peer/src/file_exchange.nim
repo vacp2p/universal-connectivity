@@ -1,7 +1,5 @@
-import os, strutils, sequtils
+import os
 import libp2p, chronos, stew/byteutils
-
-import ./utils
 
 const
   MaxFileSize: int = 1024 # 1KiB
@@ -29,6 +27,8 @@ proc new*(T: typedesc[FileExchange]): T =
 
   return T.new(codecs = @[FileExchangeCodec], handler = handle)
 
-proc requestFile*(p: FileExchange, conn: Connection, fileId: string): Future[seq[byte]] {.async.} =
+proc requestFile*(
+    p: FileExchange, conn: Connection, fileId: string
+): Future[seq[byte]] {.async.} =
   await conn.writeLp(cast[seq[byte]](fileId))
   await conn.readLp(MaxFileSize)

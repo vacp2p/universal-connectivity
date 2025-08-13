@@ -1,4 +1,4 @@
-import chronos, unicode, tables, deques, sequtils, os
+import chronos, deques
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
@@ -16,7 +16,7 @@ const
 type InputPanel = ref object of nw.Node
 
 method render(node: InputPanel, ctx: var nw.Context[State]) =
-  ctx = nw.slice(ctx, 0, 0, iw.width(ctx.tb), InputPanelHeight)
+  ctx = nw.slice(ctx, 0, 0, iw.width(ctx.tb) - 3, InputPanelHeight)
   render(
     nw.Box(
       border: nw.Border.Single,
@@ -45,8 +45,9 @@ proc runUI*(
     iw.init()
   except:
     echo "iw.init error"
-  ctx.data.inputBuffer = ""
+    return
 
+  ctx.data.inputBuffer = ""
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
   # TODO: publish my peerid in peerid topic
@@ -130,5 +131,5 @@ proc runUI*(
     iw.display(ctx.tb, prevTb)
     prevTb = ctx.tb
 
-    await sleepAsync(50.milliseconds)
+    await sleepAsync(5.milliseconds)
     iw.clear(ctx.tb)

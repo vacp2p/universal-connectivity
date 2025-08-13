@@ -22,7 +22,11 @@ proc shortPeerId*(peerId: PeerId): string {.raises: [ValueError].} =
 
 proc sanitizeFileId*(fileId: string): string =
   ## Sanitize a filename for Windows, macOS, and Linux
-  result = fileId.multiReplace(SanitizationRules).strip()
+  result = fileId
+  for (chars, replacement) in SanitizationRules:
+    for ch in chars:
+      result = result.multiReplace(($ch, $replacement))
+  result = result.strip()
   # Avoid reserved Windows filenames (CON, PRN, AUX, NUL, COM1..COM9, LPT1..LPT9)
   var reserved = @["CON", "PRN", "AUX", "NUL"]
   for i in 1 .. 9:

@@ -1,5 +1,4 @@
-import unicode, tables, deques, sequtils, os
-from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
+import unicode
 from nimwave as nw import nil
 
 import ./context
@@ -24,15 +23,14 @@ proc new*(
 
 proc formatText(node: ScrollingTextBox): seq[string] =
   result = @[]
-  result.add(node.title.alignLeft(node.width))
+  result.add(node.title.alignLeft(node.width - 2))
   # empty line after title
-  result.add(" ".alignLeft(node.width))
-  if node.text.len == 0:
-    return
-  for line in node.text[
-      node.startingLine .. min(node.startingLine + node.height, node.text.len - 1)
-  ]:
-    result.add(line.alignLeft(node.width))
+  result.add(" ".alignLeft(node.width - 2))
+  for i in 0 ..< node.height - 2:
+    if i < node.text.len:
+      result.add(node.text[i].alignLeft(node.width - 2))
+    else:
+      result.add(" ".alignLeft(node.width - 2))
 
 proc scrollUp*(node: ScrollingTextBox, size: int) =
   node.startingLine = max(node.startingLine - size, 0)
