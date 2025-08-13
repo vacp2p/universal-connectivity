@@ -1,9 +1,8 @@
+import std/sha1, tables, deques, strutils, sequtils, os
+
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from terminal import nil
-
-import std/sha1
-import chronos, tables, deques, strutils, sequtils
-import libp2p, cligen
+import libp2p, chronos, cligen
 from libp2p/protocols/pubsub/rpc/message import Message
 
 import ./ui/root
@@ -54,12 +53,11 @@ proc start(
   let onNewFile = proc(
       topic: string, msg: Message
   ): Future[ValidationResult] {.async, gcsafe.} =
-    let fileId = cast[string](msg.data)
+    let fileId = sanitizeFileId(cast[string](msg.data))
     # use known addresses since we can't use kad to get peer addrs
     # this means that we're unable to get files from a peer to which we don't have the addresses
     let conn = await switch.dial(msg.fromPeer, addrs, FileExchangeCodec)
-    # TODO: path appending is unsafe  (sanitize)
-    let filePath = "/tmp/" & fileId
+    let filePath = getTempDir() / fileId
     let fileContents = await fileExchange.requestFile(conn, fileId)
     writeFile(filePath, fileContents)
     await conn.close()
