@@ -38,8 +38,6 @@ proc runUI*(
   var
     ctx = nw.initContext[State]()
     prevTb: iw.TerminalBuffer
-    mouseQueue: Deque[iw.MouseInfo]
-    keyQueue: Deque[iw.Key]
     mouse: iw.MouseInfo
     key: iw.Key
   terminal.enableTrueColors()
@@ -50,7 +48,6 @@ proc runUI*(
     echo "iw.init error"
     return
 
-  ctx.data.inputBuffer = ""
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
   # TODO: publish my peerid in peerid topic
@@ -69,30 +66,31 @@ proc runUI*(
       width = iw.width(ctx.tb),
       height = iw.height(ctx.tb) - TopHeight - InputPanelHeight,
     )
+
+  ctx.data.inputBuffer = ""
+  let focusAreas = @[chatPanel, peersPanel, systemPanel]
+  var focusIndex = 0
+  var focusedPanel: ScrollingTextBox
+
+  # TODO: focused panel to not break
+  # TODO: focused panel to have double lines
   while true:
+    focusedPanel = focusAreas[focusIndex]
     key = iw.getKey(mouse)
     if key == iw.Key.Mouse:
-      mouseQueue.addLast(mouse)
       # TODO: after focus is done, scroll focused field
       case mouse.scrollDir
       of iw.ScrollDirection.sdUp:
-        chatPanel.scrollUp(ScrollSpeed)
+        focusedPanel.scrollUp(ScrollSpeed)
       of iw.ScrollDirection.sdDown:
-        chatPanel.scrollDown(ScrollSpeed)
+        focusedPanel.scrollDown(ScrollSpeed)
       else:
         discard
-    elif key != iw.Key.None:
-      keyQueue.addLast(key)
-
-    mouse =
-      if mouseQueue.len > 0:
-        mouseQueue.popFirst
-      else:
-        iw.MouseInfo()
-
-    key = if keyQueue.len > 0: keyQueue.popFirst else: iw.Key.None
-
-    if key in {iw.Key.Space .. iw.Key.Tilde}:
+    elif key == iw.Key.Tab:
+      focusIndex += 1
+      if focusIndex >= focusAreas.len:
+        focusIndex = 0 # wrap around
+    elif key in {iw.Key.Space .. iw.Key.Tilde}:
       ctx.data.inputBuffer.add(cast[char](key.ord))
     elif key == iw.Key.Backspace and ctx.data.inputBuffer.len > 0:
       ctx.data.inputBuffer.setLen(ctx.data.inputBuffer.len - 1)

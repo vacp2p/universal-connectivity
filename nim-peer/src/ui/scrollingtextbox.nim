@@ -43,6 +43,7 @@ proc scrollUp*(node: ScrollingTextBox, speed: int) =
   node.startingLine = max(node.startingLine - speed, 0)
 
 proc scrollDown*(node: ScrollingTextBox, speed: int) =
+  # TODO: fix bug when scrolling down but no lines to scroll
   node.startingLine = min(node.startingLine + speed, node.text.len - node.height + 2)
 
 proc tail(node: ScrollingTextBox) =
