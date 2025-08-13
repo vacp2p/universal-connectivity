@@ -5,67 +5,23 @@ from terminal import nil
 import libp2p
 
 import ./scrollingtextbox
+import ./context
 import ../utils
 
-type State = object
-  peers: seq[string]
-  messages: seq[string]
-  systemLogs: seq[string]
-  inputBuffer*: string
-
-include nimwave/prelude
-
 const
+  InputPanelHeight: int = 3
   PeersPanelWidth: int = 10
   TopHeight: int = 15
 
-type
-  PeersPanel = ref object of nw.Node
-  ChatPanel = ref object of nw.Node
-  SystemPanel = ref object of nw.Node
+type InputPanel = ref object of nw.Node
 
-method render(node: ChatPanel, ctx: var nw.Context[State]) =
-  let width =
-    if PeersPanelWidth < iw.width(ctx.tb):
-      iw.width(ctx.tb) - PeersPanelWidth
-    else:
-      iw.width(ctx.tb)
-  ctx = nw.slice(ctx, 0, 0, width, TopHeight)
+method render(node: InputPanel, ctx: var nw.Context[State]) =
+  ctx = nw.slice(ctx, 0, 0, iw.width(ctx.tb), InputPanelHeight)
   render(
     nw.Box(
       border: nw.Border.Single,
       direction: nw.Direction.Vertical,
-      children: nw.seq(ctx.data.messages),
-    ),
-    ctx,
-  )
-
-method render(node: PeersPanel, ctx: var nw.Context[State]) =
-  let width = PeersPanelWidth
-  let height = TopHeight
-  ctx = nw.slice(ctx, 0, 0, width, height)
-  render(
-    nw.Box(
-      border: nw.Border.Single,
-      direction: nw.Direction.Vertical,
-      children: nw.seq(ctx.data.peers),
-    ),
-    ctx,
-  )
-
-method render(node: SystemPanel, ctx: var nw.Context[State]) =
-  let width = iw.width(ctx.tb)
-  let height =
-    if TopHeight < iw.height(ctx.tb):
-      iw.height(ctx.tb) - TopHeight
-    else:
-      iw.height(ctx.tb)
-  ctx = nw.slice(ctx, 0, 0, width, height)
-  render(
-    nw.Box(
-      border: nw.Border.Single,
-      direction: nw.Direction.Vertical,
-      children: nw.seq(ctx.data.systemLogs),
+      children: nw.seq("> " & ctx.data.inputBuffer),
     ),
     ctx,
   )
@@ -89,16 +45,26 @@ proc runUI*(
     iw.init()
   except:
     echo "iw.init error"
-  terminal.hideCursor()
-  ctx.data.peers = @["Peers", "", shortPeerId(myPeerId) & " (You)"]
-  ctx.data.messages = @["Chat", ""]
-  ctx.data.systemLogs = @["System", ""]
   ctx.data.inputBuffer = ""
 
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
 
   # TODO: publish my peerid in peerid topic
-
+  let
+    chatPanel = ScrollingTextBox.new(
+      title = "Chat", width = iw.width(ctx.tb) - PeersPanelWidth, height = TopHeight
+    )
+    peersPanel = ScrollingTextBox.new(
+      title = "Peers",
+      width = PeersPanelWidth,
+      height = TopHeight,
+      text = @[shortPeerId(myPeerId) & " (You)"],
+    )
+    systemPanel = ScrollingTextBox.new(
+      title = "System",
+      width = iw.width(ctx.tb),
+      height = iw.height(ctx.tb) - TopHeight - InputPanelHeight,
+    )
   while true:
     key = iw.getKey(mouse)
     if key == iw.Key.Mouse:
@@ -128,10 +94,8 @@ proc runUI*(
     elif key == iw.Key.Enter:
       # TODO: handle /file command to send/publish files
       # /file filename (registers ID in local database, sends fileId, handles incoming file requests)
-      discard await gossip.publish(
-        room, cast[seq[byte]](@(ctx.data.inputBuffer))
-      )
-      ctx.data.messages.add("You: " & ctx.data.inputBuffer) # show message in ui
+      discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
+      chatPanel.text.add("You: " & ctx.data.inputBuffer) # show message in ui
       ctx.data.inputBuffer = "" # clear input buffer
     elif key != iw.Key.None:
       discard
@@ -140,23 +104,23 @@ proc runUI*(
     if peerQ.len != 0:
       # TODO: handle peer removals
       let newPeer = await peerQ.get()
-      if not ctx.data.peers.contains(shortPeerId(newPeer)):
-        ctx.data.peers.add(shortPeerId(newPeer))
+      if not peersPanel.text.contains(shortPeerId(newPeer)):
+        peersPanel.text.add(shortPeerId(newPeer))
 
     # update messages if there's a new message from recvQ
     if not recvQ.empty():
       let msg = await recvQ.get()
-      ctx.data.messages.add(msg) # show message in ui
+      chatPanel.text.add(msg) # show message in ui
 
     renderRoot(
       nw.Box(
         direction: nw.Direction.Vertical,
         children: nw.seq(
           nw.Box(
-            direction: nw.Direction.Horizontal,
-            children: nw.seq(ChatPanel(), PeersPanel()),
+            direction: nw.Direction.Horizontal, children: nw.seq(chatPanel, peersPanel)
           ),
-          SystemPanel(),
+          systemPanel,
+          InputPanel(),
         ),
       ),
       ctx,
