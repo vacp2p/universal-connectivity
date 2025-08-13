@@ -2,7 +2,7 @@ import std/sha1, tables, deques, strutils, sequtils, os
 
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from terminal import nil
-import libp2p, chronos, cligen
+import libp2p, chronos, cligen, chronicles
 from libp2p/protocols/pubsub/rpc/message import Message
 
 import ./ui/root
@@ -33,7 +33,14 @@ proc start(
   let peerQ = newAsyncQueue[PeerId]()
 
   # connect to peer
-  await switch.connect(peerId, addrs)
+  try:
+    await switch.connect(peerId, addrs)
+  except Exception as exc:
+    error "Connection error", error = exc.msg
+  finally:
+    if switch != nil:
+      await switch.stop()
+    return
 
   # wait so that gossipsub can form mesh
   await sleepAsync(3.seconds)
@@ -90,12 +97,10 @@ proc start(
       await runUI(gossip, room, recvQ, peerQ, switch.peerInfo.peerId)
       iw.deinit()
   except Exception as exc:
-    echo "running error: " & exc.msg
-    discard
+    error "Unexpected error", error = exc.msg
   finally:
     if switch != nil:
       await switch.stop()
-    terminal.showCursor()
 
 proc cli(room = ChatTopic, headless = false, args: seq[string]) =
   if args.len < 2:
