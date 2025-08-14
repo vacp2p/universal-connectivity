@@ -114,6 +114,9 @@ proc start(
   # Handle Ctrl+C
   setControlCHook(cleanup)
 
+  for peerId in switch.peerStore[AddressBook].book.keys:
+    await peerQ.put(peerId)
+
   try:
     if headless:
       runForever()
