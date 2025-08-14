@@ -4,10 +4,21 @@ import libp2p, chronos, cligen, chronicles
 from libp2p/protocols/pubsub/rpc/message import Message
 
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
+from terminal import nil
 
 import ./ui/root
 import ./utils
 import ./file_exchange
+
+proc cleanup() {.noconv.} =
+  terminal.resetAttributes()
+  terminal.showCursor()
+
+  # Clear screen and move cursor to top-left
+  stdout.write("\e[2J\e[H") # ANSI escape: clear screen & home
+  stdout.flushFile()
+
+  quit(130) # SIGINT conventional exit code
 
 proc start(
     peerId: PeerId, addrs: seq[MultiAddress], headless: bool, room: string
@@ -58,7 +69,7 @@ proc start(
     await systemQ.put("    Source: " & $msg.fromPeer)
     await systemQ.put("    Topic: " & $topic)
     await systemQ.put("    Seqno: " & $seqnoToUint64(msg.seqno))
-    await systemQ.put("") # empty line
+    await systemQ.put(" ") # empty line
     return ValidationResult.Accept
 
   # when a new file is announced, download it
@@ -75,14 +86,14 @@ proc start(
     await conn.close()
     # Save file in /tmp/fileId
     await systemQ.put("Downloaded file to " & filePath)
-    await systemQ.put("") # empty line
+    await systemQ.put(" ") # empty line
     return ValidationResult.Accept
 
   # when a new peer is announced
   let onNewPeer = proc(topic: string, data: seq[byte]) {.async, gcsafe.} =
     let peerId = PeerId.init(data).valueOr:
       await systemQ.put("Error parsing PeerId from data: " & $data)
-      await systemQ.put("") # empty line
+      await systemQ.put(" ") # empty line
       return
     await peerQ.put(peerId)
     await systemQ.put("New peer " & $peerId)
@@ -100,13 +111,18 @@ proc start(
   # peer discovery
   gossip.subscribe(PeerDiscoveryTopic, onNewPeer)
 
+  # Handle Ctrl+C
+  setControlCHook(cleanup)
+
   try:
     if headless:
       runForever()
     else:
       await runUI(gossip, room, recvQ, peerQ, systemQ, switch.peerInfo.peerId)
       iw.deinit()
+      cleanup()
   except Exception as exc:
+    cleanup()
     error "Unexpected error", error = exc.msg
   finally:
     if switch != nil:

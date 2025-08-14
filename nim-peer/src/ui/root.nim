@@ -1,4 +1,4 @@
-import chronos, deques
+import chronos, chronicles, deques, strutils
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
@@ -35,19 +35,6 @@ proc runUI*(
     systemQ: AsyncQueue[string],
     myPeerId: PeerId,
 ) {.async: (raises: [Exception]).} =
-  # Handle Ctrl+C
-  setControlCHook(
-    proc() {.noconv.} =
-      terminal.resetAttributes()
-      terminal.showCursor()
-
-      # Clear screen and move cursor to top-left
-      stdout.write("\e[2J\e[H") # ANSI escape: clear screen & home
-      stdout.flushFile()
-
-      quit(130) # SIGINT conventional exit code
-  )
-
   var
     ctx = nw.initContext[State]()
     prevTb: iw.TerminalBuffer
@@ -80,12 +67,18 @@ proc runUI*(
       height = iw.height(ctx.tb) - TopHeight - InputPanelHeight,
     )
 
+  # Send chronicle logs to systemPanel
+  defaultChroniclesStream.output.writer = proc(
+      logLevel: LogLevel, msg: LogOutputStr
+  ) {.gcsafe.} =
+    for line in msg.replace("\t", "    ").splitLines():
+      systemPanel.push(line)
+
   ctx.data.inputBuffer = ""
   let focusAreas = @[chatPanel, peersPanel, systemPanel]
   var focusIndex = 0
   var focusedPanel: ScrollingTextBox
 
-  # TODO: focused panel to have double lines
   while true:
     focusedPanel = focusAreas[focusIndex]
     focusedPanel.border = nw.Border.Double
@@ -139,7 +132,8 @@ proc runUI*(
     # update messages if there's a new message from recvQ
     if not systemQ.empty():
       let msg = await systemQ.get()
-      systemPanel.push(msg) # show message in ui
+      if msg.len > 0:
+        systemPanel.push(msg) # show message in ui
 
     renderRoot(
       nw.Box(

@@ -18,12 +18,9 @@ proc new*(
     height: int = 3,
     text: seq[string] = @[],
 ): T =
-  var height = height
-  if height < 3:
-    height = 3
-  var width = width
-  if width < 3:
-    width = 3
+  # width and height cannot be less than 3 (2 for borders + 1 for content)
+  let height = max(height, 3)
+  let width = max(width, 3)
   # height and width - 2 to account for size of box lines (top and botton)
   ScrollingTextBox(
     title: title,
@@ -39,7 +36,7 @@ proc formatText(node: ScrollingTextBox): seq[string] =
   result.add(node.title.alignLeft(node.width))
   # empty line after title
   result.add(" ".alignLeft(node.width))
-  for i in node.startingLine ..< node.startingLine + node.height - 2:
+  for i in node.startingLine ..< max(node.startingLine + node.height - 2, 0):
     if i < node.text.len:
       result.add(node.text[i].alignLeft(node.width))
     else:
@@ -65,6 +62,8 @@ proc chunkString(s: string, chunkSize: int): seq[string] =
     i += chunkSize
 
 proc push*(node: ScrollingTextBox, newLine: string) =
+  if newLine.len == 0 or node.width <= 0:
+    return
   for chunk in chunkString(newLine, node.width):
     node.text.add(chunk)
   node.tail()
