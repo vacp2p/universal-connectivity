@@ -12,10 +12,9 @@ proc new*(T: typedesc[FileExchange]): T =
   proc handle(conn: Connection, proto: string) {.async: (raises: [CancelledError]).} =
     try:
       let fileId = string.fromBytes(await conn.readLp(MaxFileIdSize))
-      # TODO: this is unsafe, fix it
-      let filename = "/tmp/" & fileId
-      # if /tmp/{fileid} exists
-      if fileExists(filename):
+      # filename is /tmp/{fileid}
+      let filename = getTempDir().joinPath(fileId)
+      if filename.fileExists:
         let fileContent = cast[seq[byte]](readFile(filename))
         await conn.writeLp(fileContent)
     except CancelledError as e:

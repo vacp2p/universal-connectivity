@@ -10,8 +10,6 @@ import ../utils
 
 const
   InputPanelHeight: int = 3
-  PeersPanelWidth: int = 20
-  TopHeight: int = 25
   ScrollSpeed: int = 2
 
 type InputPanel = ref object of nw.Node
@@ -52,19 +50,21 @@ proc runUI*(
 
   # TODO: publish my peerid in peerid topic
   let
+    peersPanelWidth = (iw.width(ctx.tb) / 4).int
+    topHeight = (iw.height(ctx.tb) / 2).int
     chatPanel = ScrollingTextBox.new(
-      title = "Chat", width = iw.width(ctx.tb) - PeersPanelWidth, height = TopHeight
+      title = "Chat", width = iw.width(ctx.tb) - peersPanelWidth, height = topHeight
     )
     peersPanel = ScrollingTextBox.new(
       title = "Peers",
-      width = PeersPanelWidth,
-      height = TopHeight,
+      width = peersPanelWidth,
+      height = topHeight,
       text = @[shortPeerId(myPeerId) & " (You)"],
     )
     systemPanel = ScrollingTextBox.new(
       title = "System",
       width = iw.width(ctx.tb),
-      height = iw.height(ctx.tb) - TopHeight - InputPanelHeight,
+      height = iw.height(ctx.tb) - topHeight - InputPanelHeight,
     )
 
   # Send chronicle logs to systemPanel
