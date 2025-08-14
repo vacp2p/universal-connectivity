@@ -102,5 +102,8 @@ go run .
 ## Getting started: Nim
 ```
 cd nim-peer
-nimble run
+nimble run -- <peer-id> <multiaddress> [<multiaddress>, ...]
+
+# For example
+nimble run -- 12D3KooSomePeerId /ip4/127.0.0.1/tcp/9092
 ```
