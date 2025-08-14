@@ -1,4 +1,4 @@
-import unicode
+import unicode, sequtils
 from nimwave as nw import nil
 
 import ./context
@@ -73,6 +73,13 @@ proc push*(node: ScrollingTextBox, newLine: string) =
   for chunk in chunkString(newLine, node.width):
     node.text.add(chunk)
   node.tail()
+
+proc remove*(node: ScrollingTextBox, lineToRemove: string) =
+  let idx = node.text.find(lineToRemove)
+  if idx != -1:
+    node.text.delete(idx)
+    if idx <= node.startingLine:
+      node.scrollUp(1)
 
 method render(node: ScrollingTextBox, ctx: var nw.Context[State]) =
   ctx = nw.slice(ctx, 0, 0, node.width + 2, node.height + 2)

@@ -1,4 +1,4 @@
-import chronos, chronicles, deques, strutils
+import chronos, chronicles, deques, strutils, sequtils
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
@@ -43,7 +43,7 @@ proc runUI*(
     gossip: GossipSub,
     room: string,
     recvQ: AsyncQueue[string],
-    peerQ: AsyncQueue[PeerId],
+    peerQ: AsyncQueue[(PeerId, PeerEventKind)],
     systemQ: AsyncQueue[string],
     myPeerId: PeerId,
 ) {.async: (raises: [Exception]).} =
@@ -124,19 +124,31 @@ proc runUI*(
       # give file an Id
       # publish Id
       # wait for connections
-      discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
-      chatPanel.push("You: " & ctx.data.inputBuffer) # show message in ui
-      systemPanel.push("Sent chat message")
-      ctx.data.inputBuffer = "" # clear input buffer
+      try:
+        discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
+        chatPanel.push("You: " & ctx.data.inputBuffer) # show message in ui
+        systemPanel.push("Sent chat message")
+      except Exception as exc:
+        systemPanel.push("Unable to send chat message: " & exc.msg)
+      finally:
+        ctx.data.inputBuffer = "" # clear input buffer
     elif key != iw.Key.None:
       discard
 
     # update peer list if there's a new peer from peerQ
     if not peerQ.empty():
-      # TODO: handle peer removals
-      let newPeer = await peerQ.get()
-      if not peersPanel.text.contains(shortPeerId(newPeer)):
+      let (newPeer, eventKind) = await peerQ.get()
+
+      if eventKind == PeerEventKind.Joined and
+          not peersPanel.text.contains(shortPeerId(newPeer)):
+        systemPanel.push("Adding peer " & shortPeerId(newPeer))
         peersPanel.push(shortPeerId(newPeer))
+
+      if eventKind == PeerEventKind.Left and
+          peersPanel.text.contains(shortPeerId(newPeer)):
+        systemPanel.push("Removing peer " & shortPeerId(newPeer))
+        peersPanel.text = peersPanel.text.filterIt(it != shortPeerId(newPeer))
+        peersPanel.remove(shortPeerId(newPeer))
 
     # update messages if there's a new message from recvQ
     if not recvQ.empty():

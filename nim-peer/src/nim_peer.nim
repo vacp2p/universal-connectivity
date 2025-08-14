@@ -17,24 +17,29 @@ proc cleanup() {.noconv.} =
     iw.deinit()
   except:
     discard
-
   # Clear screen and move cursor to top-left
   stdout.write("\e[2J\e[H") # ANSI escape: clear screen & home
   stdout.flushFile()
-
   quit(130) # SIGINT conventional exit code
 
 proc start(
     peerId: PeerId, addrs: seq[MultiAddress], headless: bool, room: string
 ) {.async.} =
+  # Handle Ctrl+C
+  setControlCHook(cleanup)
+
+  # TODO: check if local.peerid file exists
+
   # setup peer
   let switch = SwitchBuilder
     .new()
     .withRng(newRng())
     .withTcpTransport()
+    .withAddresses(@[MultiAddress.init("/ip4/0.0.0.0/tcp/9093").tryGet()])
     .withYamux()
     .withNoise()
     .build()
+
   let gossip = GossipSub.init(switch = switch, triggerSelf = true)
   switch.mount(gossip)
 
@@ -45,17 +50,18 @@ proc start(
 
   let
     recvQ = newAsyncQueue[string]()
-    peerQ = newAsyncQueue[PeerId]()
+    peerQ = newAsyncQueue[(PeerId, PeerEventKind)]()
     systemQ = newAsyncQueue[string]()
+
+  await systemQ.put("Started switch: " & $switch.peerInfo.peerId)
+  writeFile("./local.peerid", $switch.peerInfo.peerId)
 
   # connect to peer
   try:
     await switch.connect(peerId, addrs)
   except Exception as exc:
+    error "Connection error", error = exc.msg
     await systemQ.put("Connection error: " & exc.msg)
-    if switch != nil:
-      await switch.stop()
-    return
 
   # wait so that gossipsub can form mesh
   await sleepAsync(3.seconds)
@@ -68,7 +74,7 @@ proc start(
   ): Future[ValidationResult] {.async, gcsafe.} =
     let strMsg = cast[string](msg.data)
     await recvQ.put(shortPeerId(msg.fromPeer) & ": " & strMsg)
-    await peerQ.put(msg.fromPeer)
+    await peerQ.put((msg.fromPeer, PeerEventKind.Joined))
     await systemQ.put("Received message")
     await systemQ.put("    Source: " & $msg.fromPeer)
     await systemQ.put("    Topic: " & $topic)
@@ -99,39 +105,50 @@ proc start(
       await systemQ.put("Error parsing PeerId from data: " & $data)
       await systemQ.put(" ") # empty line
       return
-    await peerQ.put(peerId)
-    await systemQ.put("New peer " & $peerId)
+    await peerQ.put((peerId, PeerEventKind.Joined))
 
   # register validators and handlers
 
-  # chat messages
+  # receive chat messages
   gossip.subscribe(room, nil)
   gossip.addValidator(room, onChatMsg)
 
-  # files
+  # receive files offerings
   gossip.subscribe(ChatFileTopic, nil)
   gossip.addValidator(ChatFileTopic, onNewFile)
 
-  # peer discovery
+  # receive newly connected peers through gossipsub
   gossip.subscribe(PeerDiscoveryTopic, onNewPeer)
 
-  # Handle Ctrl+C
-  setControlCHook(cleanup)
+  let onPeerJoined = proc(
+      peer: PeerId, peerEvent: PeerEvent
+  ) {.gcsafe, async: (raises: [CancelledError]).} =
+    await peerQ.put((peer, PeerEventKind.Joined))
 
+  let onPeerLeft = proc(
+      peer: PeerId, peerEvent: PeerEvent
+  ) {.gcsafe, async: (raises: [CancelledError]).} =
+    await peerQ.put((peer, PeerEventKind.Left))
+
+  # receive newly connected peers through direct connections
+  switch.addPeerEventHandler(onPeerJoined, PeerEventKind.Joined)
+  switch.addPeerEventHandler(onPeerLeft, PeerEventKind.Left)
+
+  # add already connected peers
   for peerId in switch.peerStore[AddressBook].book.keys:
-    await peerQ.put(peerId)
+    await peerQ.put((peerId, PeerEventKind.Joined))
 
-  try:
-    if headless:
-      runForever()
-    else:
+  if headless:
+    runForever()
+  else:
+    try:
       await runUI(gossip, room, recvQ, peerQ, systemQ, switch.peerInfo.peerId)
-  except Exception as exc:
-    error "Unexpected error", error = exc.msg
-  finally:
-    if switch != nil:
-      await switch.stop()
-    cleanup()
+    except Exception as exc:
+      echo "Unexpected error: " & exc.msg
+    finally:
+      if switch != nil:
+        await switch.stop()
+      cleanup()
 
 proc cli(room = ChatTopic, headless = false, args: seq[string]) =
   if args.len < 2:
