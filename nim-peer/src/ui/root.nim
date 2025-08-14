@@ -119,6 +119,7 @@ proc runUI*(
       # wait for connections
       discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
       chatPanel.push("You: " & ctx.data.inputBuffer) # show message in ui
+      systemPanel.push("Sent chat message")
       ctx.data.inputBuffer = "" # clear input buffer
     elif key != iw.Key.None:
       discard

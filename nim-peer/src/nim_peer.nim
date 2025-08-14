@@ -20,8 +20,7 @@ proc start(
     .withYamux()
     .withNoise()
     .build()
-  let gossip =
-    GossipSub.init(switch = switch, triggerSelf = true, verifySignature = false)
+  let gossip = GossipSub.init(switch = switch, triggerSelf = true)
   switch.mount(gossip)
 
   let fileExchange = FileExchange.new()
@@ -38,7 +37,7 @@ proc start(
   try:
     await switch.connect(peerId, addrs)
   except Exception as exc:
-    error "Connection error", error = exc.msg
+    await systemQ.put("Connection error: " & exc.msg)
     if switch != nil:
       await switch.stop()
     return
@@ -55,10 +54,11 @@ proc start(
     let strMsg = cast[string](msg.data)
     await recvQ.put(shortPeerId(msg.fromPeer) & ": " & strMsg)
     await peerQ.put(msg.fromPeer)
-    await systemQ.put("received message")
-    await systemQ.put("\t source: " & $msg.fromPeer)
-    await systemQ.put("\t topic: " & $topic)
-    await systemQ.put("\t seqno: " & $seqnoToUint64(msg.seqno))
+    await systemQ.put("Received message")
+    await systemQ.put("    Source: " & $msg.fromPeer)
+    await systemQ.put("    Topic: " & $topic)
+    await systemQ.put("    Seqno: " & $seqnoToUint64(msg.seqno))
+    await systemQ.put("") # empty line
     return ValidationResult.Accept
 
   # when a new file is announced, download it
@@ -75,11 +75,15 @@ proc start(
     await conn.close()
     # Save file in /tmp/fileId
     await systemQ.put("Downloaded file to " & filePath)
+    await systemQ.put("") # empty line
     return ValidationResult.Accept
 
   # when a new peer is announced
   let onNewPeer = proc(topic: string, data: seq[byte]) {.async, gcsafe.} =
-    let peerId: PeerId = switch.peerInfo.peerId # TODO: obtain peerId from data
+    let peerId = PeerId.init(data).valueOr:
+      await systemQ.put("Error parsing PeerId from data: " & $data)
+      await systemQ.put("") # empty line
+      return
     await peerQ.put(peerId)
     await systemQ.put("New peer " & $peerId)
 
