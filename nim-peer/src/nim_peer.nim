@@ -13,6 +13,10 @@ import ./file_exchange
 proc cleanup() {.noconv.} =
   terminal.resetAttributes()
   terminal.showCursor()
+  try:
+    iw.deinit()
+  except:
+    discard
 
   # Clear screen and move cursor to top-left
   stdout.write("\e[2J\e[H") # ANSI escape: clear screen & home
@@ -122,14 +126,12 @@ proc start(
       runForever()
     else:
       await runUI(gossip, room, recvQ, peerQ, systemQ, switch.peerInfo.peerId)
-      iw.deinit()
-      cleanup()
   except Exception as exc:
-    cleanup()
     error "Unexpected error", error = exc.msg
   finally:
     if switch != nil:
       await switch.stop()
+    cleanup()
 
 proc cli(room = ChatTopic, headless = false, args: seq[string]) =
   if args.len < 2:
