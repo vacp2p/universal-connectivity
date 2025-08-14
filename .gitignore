@@ -10,3 +10,4 @@ yarn.lock
 go-peer/go-peer
 **/.idea
 nim-peer/nim_peer
+nim-peer/local.peerid
