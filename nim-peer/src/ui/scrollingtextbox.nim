@@ -9,6 +9,7 @@ type ScrollingTextBox* = ref object of nw.Node
   width*: int
   height*: int
   startingLine: int
+  border*: nw.Border
 
 proc new*(
     T: typedesc[ScrollingTextBox],
@@ -25,7 +26,12 @@ proc new*(
     width = 3
   # height and width - 2 to account for size of box lines (top and botton)
   ScrollingTextBox(
-    title: title, width: width - 2, height: height - 2, text: text, startingLine: 0
+    title: title,
+    width: width - 2,
+    height: height - 2,
+    text: text,
+    startingLine: 0,
+    border: nw.Border.Single,
   )
 
 proc formatText(node: ScrollingTextBox): seq[string] =
@@ -67,7 +73,7 @@ method render(node: ScrollingTextBox, ctx: var nw.Context[State]) =
   ctx = nw.slice(ctx, 0, 0, node.width + 2, node.height + 2)
   render(
     nw.Box(
-      border: nw.Border.Single,
+      border: node.border,
       direction: nw.Direction.Vertical,
       children: nw.seq(node.formatText()),
     ),

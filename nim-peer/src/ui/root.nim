@@ -75,6 +75,7 @@ proc runUI*(
   # TODO: focused panel to have double lines
   while true:
     focusedPanel = focusAreas[focusIndex]
+    focusedPanel.border = nw.Border.Double
     key = iw.getKey(mouse)
     if key == iw.Key.Mouse:
       case mouse.scrollDir
@@ -85,6 +86,8 @@ proc runUI*(
       else:
         discard
     elif key == iw.Key.Tab:
+      # unfocus previous panel
+      focusedPanel.border = nw.Border.Single
       focusIndex += 1
       if focusIndex >= focusAreas.len:
         focusIndex = 0 # wrap around
@@ -95,6 +98,12 @@ proc runUI*(
     elif key == iw.Key.Enter:
       # TODO: handle /file command to send/publish files
       # /file filename (registers ID in local database, sends fileId, handles incoming file requests)
+      #if ctx.data.inputBuffer.startsWith("/file "):
+      # split buffer in spaces
+      # read file that is splitted[1]
+      # give file an Id
+      # publish Id
+      # wait for connections
       discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
       chatPanel.push("You: " & ctx.data.inputBuffer) # show message in ui
       ctx.data.inputBuffer = "" # clear input buffer
