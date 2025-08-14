@@ -35,6 +35,19 @@ proc runUI*(
     systemQ: AsyncQueue[string],
     myPeerId: PeerId,
 ) {.async: (raises: [Exception]).} =
+  # Handle Ctrl+C
+  setControlCHook(
+    proc() {.noconv.} =
+      terminal.resetAttributes()
+      terminal.showCursor()
+
+      # Clear screen and move cursor to top-left
+      stdout.write("\e[2J\e[H") # ANSI escape: clear screen & home
+      stdout.flushFile()
+
+      quit(130) # SIGINT conventional exit code
+  )
+
   var
     ctx = nw.initContext[State]()
     prevTb: iw.TerminalBuffer
