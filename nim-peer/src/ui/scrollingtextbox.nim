@@ -31,6 +31,12 @@ proc new*(
     border: nw.Border.Single,
   )
 
+proc resize*(node: ScrollingTextBox, width: int, height: int) =
+  let height = max(height, 3)
+  let width = max(width, 3)
+  node.width = width - 2
+  node.height = height - 2
+
 proc formatText(node: ScrollingTextBox): seq[string] =
   result = @[]
   result.add(node.title.alignLeft(node.width))

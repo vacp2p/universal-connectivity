@@ -25,6 +25,20 @@ method render(node: InputPanel, ctx: var nw.Context[State]) =
     ctx,
   )
 
+proc resizePanels(
+    chatPanel: ScrollingTextBox,
+    peersPanel: ScrollingTextBox,
+    systemPanel: ScrollingTextBox,
+    newWidth: int,
+    newHeight: int,
+) =
+  let
+    peersPanelWidth = (newWidth / 4).int
+    topHeight = (newHeight / 2).int
+  chatPanel.resize(newWidth - peersPanelWidth, topHeight)
+  peersPanel.resize(peersPanelWidth, topHeight)
+  systemPanel.resize(newWidth, newHeight - topHeight - InputPanelHeight)
+
 proc runUI*(
     gossip: GossipSub,
     room: string,
@@ -153,5 +167,9 @@ proc runUI*(
     iw.display(ctx.tb, prevTb)
     prevTb = ctx.tb
     ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
+    if iw.width(prevTb) != iw.width(ctx.tb) or iw.height(prevTb) != iw.height(ctx.tb):
+      resizePanels(
+        chatPanel, peersPanel, systemPanel, iw.width(ctx.tb), iw.height(ctx.tb)
+      )
 
     await sleepAsync(5.milliseconds)
