@@ -72,13 +72,11 @@ proc runUI*(
   var focusIndex = 0
   var focusedPanel: ScrollingTextBox
 
-  # TODO: focused panel to not break
   # TODO: focused panel to have double lines
   while true:
     focusedPanel = focusAreas[focusIndex]
     key = iw.getKey(mouse)
     if key == iw.Key.Mouse:
-      # TODO: after focus is done, scroll focused field
       case mouse.scrollDir
       of iw.ScrollDirection.sdUp:
         focusedPanel.scrollUp(ScrollSpeed)

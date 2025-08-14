@@ -43,15 +43,24 @@ proc scrollUp*(node: ScrollingTextBox, speed: int) =
   node.startingLine = max(node.startingLine - speed, 0)
 
 proc scrollDown*(node: ScrollingTextBox, speed: int) =
-  # TODO: fix bug when scrolling down but no lines to scroll
-  node.startingLine = min(node.startingLine + speed, node.text.len - node.height + 2)
+  let lastStartingLine = max(0, node.text.len - node.height + 2)
+  node.startingLine = min(node.startingLine + speed, lastStartingLine)
 
 proc tail(node: ScrollingTextBox) =
   ## focuses window in lowest frame
   node.startingLine = max(0, node.text.len - node.height + 2)
 
+proc chunkString(s: string, chunkSize: int): seq[string] =
+  result = @[]
+  var i = 0
+  while i < s.len:
+    let endIdx = min(i + chunkSize - 1, s.len - 1)
+    result.add(s[i .. endIdx])
+    i += chunkSize
+
 proc push*(node: ScrollingTextBox, newLine: string) =
-  node.text.add(newLine)
+  for chunk in chunkString(newLine, node.width):
+    node.text.add(chunk)
   node.tail()
 
 method render(node: ScrollingTextBox, ctx: var nw.Context[State]) =

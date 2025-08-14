@@ -37,3 +37,11 @@ proc sanitizeFileId*(fileId: string): string =
   # Avoid empty filenames
   if result.len == 0:
     result = "_"
+
+proc seqnoToUint64*(bytes: seq[byte]): uint64 =
+  if bytes.len != 8:
+    return 0
+  var seqno: uint64 = 0
+  for i in 0 ..< 8:
+    seqno = seqno or (uint64(bytes[i]) shl (8 * (7 - i)))
+  seqno

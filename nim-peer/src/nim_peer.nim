@@ -58,7 +58,7 @@ proc start(
     await systemQ.put("received message")
     await systemQ.put("\t source: " & $msg.fromPeer)
     await systemQ.put("\t topic: " & $topic)
-    await systemQ.put("\t seqno: " & $msg.seqno)
+    await systemQ.put("\t seqno: " & $seqnoToUint64(msg.seqno))
     return ValidationResult.Accept
 
   # when a new file is announced, download it
