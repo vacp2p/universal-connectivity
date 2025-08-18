@@ -22,15 +22,14 @@ proc cleanup() {.noconv.} =
   stdout.flushFile()
   quit(130) # SIGINT conventional exit code
 
-proc start(
-    peerId: PeerId, addrs: seq[MultiAddress], headless: bool, room: string
-) {.async.} =
+proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
   # Handle Ctrl+C
   setControlCHook(cleanup)
 
   # TODO: check if local.peerid file exists
 
   # setup peer
+  # TDOO: if local.peerid exists, read that, else writeFile...
   let switch = SwitchBuilder
     .new()
     .withRng(newRng())
@@ -56,12 +55,13 @@ proc start(
   await systemQ.put("Started switch: " & $switch.peerInfo.peerId)
   writeFile("./local.peerid", $switch.peerInfo.peerId)
 
-  # connect to peer
-  try:
-    await switch.connect(peerId, addrs)
-  except Exception as exc:
-    error "Connection error", error = exc.msg
-    await systemQ.put("Connection error: " & exc.msg)
+  # if --connect was specified, connect to peer
+  if addrs.isSome():
+    try:
+      discard await switch.connect(addrs.get())
+    except Exception as exc:
+      error "Connection error", error = exc.msg
+      await systemQ.put("Connection error: " & exc.msg)
 
   # wait so that gossipsub can form mesh
   await sleepAsync(3.seconds)
@@ -87,9 +87,8 @@ proc start(
       topic: string, msg: Message
   ): Future[ValidationResult] {.async, gcsafe.} =
     let fileId = sanitizeFileId(cast[string](msg.data))
-    # use known addresses since we can't use kad to get peer addrs
-    # this means that we're unable to get files from a peer to which we don't have the addresses
-    let conn = await switch.dial(msg.fromPeer, addrs, FileExchangeCodec)
+    # this will only work if we're connected to `fromPeer` (since we don't have kad-dht)
+    let conn = await switch.dial(msg.fromPeer, FileExchangeCodec)
     let filePath = getTempDir() / fileId
     let fileContents = await fileExchange.requestFile(conn, fileId)
     writeFile(filePath, fileContents)
@@ -150,13 +149,16 @@ proc start(
         await switch.stop()
       cleanup()
 
-proc cli(room = ChatTopic, headless = false, args: seq[string]) =
-  if args.len < 2:
-    echo "usage: nimble run -- <peer_id> <multiaddress>, [<multiaddresss>, ...] [--room <room-name>] [--headless]"
-    return
-  let peerId = PeerId.init(args[0]).get()
-  let addrs = args[1 ..^ 1].mapIt(MultiAddress.init(it).get())
-  waitFor start(peerId, addrs, headless, room)
+proc cli(connect = "", room = ChatTopic, headless = false) =
+  var addrs = Opt.none(MultiAddress)
+  if connect.len > 0:
+    addrs = Opt.some(MultiAddress.init(connect).get())
+
+  waitFor start(addrs, headless, room)
 
 when isMainModule:
-  dispatch cli
+  dispatch cli,
+    help = {
+      "connect": "full multiaddress (with /p2p/ peerId) of the node to connect to",
+      "room": "Room name",
+    }

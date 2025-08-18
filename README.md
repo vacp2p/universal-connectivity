@@ -102,8 +102,11 @@ go run .
 ## Getting started: Nim
 ```
 cd nim-peer
-nimble run -- <peer-id> <multiaddress> [<multiaddress>, ...]
+nimble build
 
-# For example
-nimble run -- 12D3KooSomePeerId /ip4/127.0.0.1/tcp/9092
+# Wait for connections in tcp/9093
+./nim_peer
+
+# Connect to another node (e.g. in localhost tcp/9092)
+./nim_peer --connect /ip4/127.0.0.1/tcp/9092/p2p/12D3KooSomePeerId
 ```

@@ -10,4 +10,4 @@ bin           = @["nim_peer"]
 
 # Dependencies
 
-requires "nim >= 2.2.0", "nimwave", "chronos", "libp2p", "illwill", "cligen", "stew"
+requires "nim >= 2.2.0", "nimwave", "chronos", "chronicles", "libp2p", "illwill", "cligen", "stew"
