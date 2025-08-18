@@ -1,4 +1,4 @@
-import tables, deques, strutils, sequtils, os
+import tables, deques, strutils, os
 
 import libp2p, chronos, cligen, chronicles
 from libp2p/protocols/pubsub/rpc/message import Message
@@ -74,7 +74,6 @@ proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
   ): Future[ValidationResult] {.async, gcsafe.} =
     let strMsg = cast[string](msg.data)
     await recvQ.put(shortPeerId(msg.fromPeer) & ": " & strMsg)
-    await peerQ.put((msg.fromPeer, PeerEventKind.Joined))
     await systemQ.put("Received message")
     await systemQ.put("    Source: " & $msg.fromPeer)
     await systemQ.put("    Topic: " & $topic)
@@ -161,4 +160,5 @@ when isMainModule:
     help = {
       "connect": "full multiaddress (with /p2p/ peerId) of the node to connect to",
       "room": "Room name",
+      "headless": "No UI, can only receive messages",
     }

@@ -57,7 +57,6 @@ proc runUI*(
   try:
     iw.init()
   except:
-    echo "iw.init error"
     return
 
   ctx.tb = iw.initTerminalBuffer(terminal.terminalWidth(), terminal.terminalHeight())
@@ -147,7 +146,6 @@ proc runUI*(
       if eventKind == PeerEventKind.Left and
           peersPanel.text.contains(shortPeerId(newPeer)):
         systemPanel.push("Removing peer " & shortPeerId(newPeer))
-        peersPanel.text = peersPanel.text.filterIt(it != shortPeerId(newPeer))
         peersPanel.remove(shortPeerId(newPeer))
 
     # update messages if there's a new message from recvQ

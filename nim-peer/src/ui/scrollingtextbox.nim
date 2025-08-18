@@ -1,4 +1,4 @@
-import unicode, sequtils
+import unicode
 from nimwave as nw import nil
 
 import ./context
@@ -76,7 +76,7 @@ proc push*(node: ScrollingTextBox, newLine: string) =
 
 proc remove*(node: ScrollingTextBox, lineToRemove: string) =
   let idx = node.text.find(lineToRemove)
-  if idx != -1:
+  if idx >= 0:
     node.text.delete(idx)
     if idx <= node.startingLine:
       node.scrollUp(1)
