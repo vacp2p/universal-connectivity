@@ -59,13 +59,32 @@ proc tail(node: ScrollingTextBox) =
   ## focuses window in lowest frame
   node.startingLine = max(0, node.text.len - node.height + 2)
 
+proc isAnsiEscapeSequence(s: string, idx: int): bool =
+  ## Check if the substring starting at `idx` is an ANSI escape sequence
+  if idx < 0 or idx + 2 >= s.len: # Need at least 3 characters for "\e["
+    return false
+  if s[idx] == '\e' and s[idx + 1] == '[': # Must start with "\e["
+    var i = idx + 2
+    while i < s.len and (s[i] in '0' .. '9' or s[i] == ';' or s[i] == 'm'):
+      i.inc
+    return s[i - 1] == 'm' # Ends with 'm'
+  return false
+
 proc chunkString(s: string, chunkSize: int): seq[string] =
-  result = @[]
+  var result: seq[string] = @[]
   var i = 0
+
   while i < s.len:
-    let endIdx = min(i + chunkSize - 1, s.len - 1)
+    var endIdx = min(i + chunkSize - 1, s.len - 1)
+
+    # Avoid splitting escape sequences
+    while endIdx > i and isAnsiEscapeSequence(s, endIdx):
+      dec endIdx
+
     result.add(s[i .. endIdx])
-    i += chunkSize
+    i = endIdx + 1
+
+  return result
 
 proc push*(node: ScrollingTextBox, newLine: string) =
   if newLine.len == 0 or node.width <= 0:
