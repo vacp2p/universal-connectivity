@@ -126,10 +126,9 @@ proc runUI*(
             if not fileExists(path):
               systemPanel.push("Unable to find file '" & path & "', skipping")
               continue
-            let filename = path.splitFile().name
+            let fileId = path.splitFile().name
             # copy file to /tmp/{filename}
-            let fileId = getTempDir().joinPath(filename)
-            copyFile(path, fileId)
+            copyFile(path, getTempDir().joinPath(fileId))
             # publish /tmp/{filename}
             try:
               discard await gossip.publish(FileTopic, cast[seq[byte]](@(fileId)))
