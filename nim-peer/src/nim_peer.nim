@@ -29,19 +29,24 @@ proc cleanup() {.noconv.} =
   quit(130) # SIGINT conventional exit code
 
 proc readKeyFile(filename: string): PrivateKey =
+  let size = getFileSize(filename) # get file size first
+  var buf: seq[byte]
+  buf.setLen(size)
+
   var fs = newFileStream(filename, fmRead)
   defer:
     fs.close()
-  var buf: array[MaxKeyLen, byte]
-  discard fs.readData(buf.addr, sizeof(buf))
+
+  discard fs.readData(buf[0].addr, size.int) # read exact number of bytes
   PrivateKey.init(buf).tryGet()
 
 proc writeKeyFile(filename: string, key: PrivateKey) =
   var fs = newFileStream(filename, fmWrite)
   defer:
     fs.close()
+
   let buf = key.getBytes().tryGet()
-  fs.writeData(buf.addr, sizeof(buf))
+  fs.writeData(buf[0].addr, buf.len)
 
 proc loadOrCreateKey(rng: var HmacDrbgContext): PrivateKey =
   if fileExists(KeyFile):
