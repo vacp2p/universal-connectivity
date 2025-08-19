@@ -1,4 +1,4 @@
-import tables, deques, strutils, os
+import tables, deques, strutils, os, base64
 
 import libp2p, chronos, cligen, chronicles
 from libp2p/protocols/pubsub/rpc/message import Message
@@ -9,6 +9,11 @@ from terminal import nil
 import ./ui/root
 import ./utils
 import ./file_exchange
+
+const
+  KeyFile: string = "local.key"
+  PeerIdFile: string = "local.peerid"
+  ListenPort: int = 9093
 
 proc cleanup() {.noconv.} =
   terminal.resetAttributes()
@@ -26,18 +31,29 @@ proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
   # Handle Ctrl+C
   setControlCHook(cleanup)
 
-  # TODO: check if local.peerid file exists
+  var rng = newRng()
 
-  # setup peer
-  # TDOO: if local.peerid exists, read that, else writeFile...
+  let key =
+    if fileExists(KeyFile):
+      let raw = base64.decode(readFile(KeyFile))
+      PrivateKey.init(raw).tryGet()
+    else:
+      let k = PrivateKey.random(rng[]).tryGet()
+      let raw = k.getBytes().tryGet()
+      writeFile(KeyFile, base64.encode(raw))
+      k
+
   let switch = SwitchBuilder
     .new()
-    .withRng(newRng())
+    .withRng(rng)
     .withTcpTransport()
-    .withAddresses(@[MultiAddress.init("/ip4/0.0.0.0/tcp/9093").tryGet()])
+    .withAddresses(@[MultiAddress.init("/ip4/0.0.0.0/tcp/" & $ListenPort).tryGet()])
     .withYamux()
     .withNoise()
+    .withPrivateKey(key)
     .build()
+
+  writeFile(PeerIdFile, $switch.peerInfo.peerId)
 
   let gossip = GossipSub.init(switch = switch, triggerSelf = true)
   switch.mount(gossip)
@@ -53,7 +69,6 @@ proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
     systemQ = newAsyncQueue[string]()
 
   await systemQ.put("Started switch: " & $switch.peerInfo.peerId)
-  writeFile("./local.peerid", $switch.peerInfo.peerId)
 
   # if --connect was specified, connect to peer
   if addrs.isSome():

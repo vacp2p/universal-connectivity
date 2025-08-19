@@ -1,4 +1,4 @@
-import chronos, chronicles, deques, strutils, sequtils
+import chronos, chronicles, deques, strutils
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
