@@ -1,4 +1,4 @@
-import chronos, chronicles, deques, strutils
+import chronos, chronicles, deques, strutils, os
 from illwave as iw import nil, `[]`, `[]=`, `==`, width, height
 from nimwave as nw import nil
 from terminal import nil
@@ -11,6 +11,7 @@ import ../utils
 const
   InputPanelHeight: int = 3
   ScrollSpeed: int = 2
+  FileTopic: string = "universal-connectivity-file"
 
 type InputPanel = ref object of nw.Node
 
@@ -115,22 +116,34 @@ proc runUI*(
     elif key == iw.Key.Backspace and ctx.data.inputBuffer.len > 0:
       ctx.data.inputBuffer.setLen(ctx.data.inputBuffer.len - 1)
     elif key == iw.Key.Enter:
-      # TODO: handle /file command to send/publish files
-      # /file filename (registers ID in local database, sends fileId, handles incoming file requests)
-      #if ctx.data.inputBuffer.startsWith("/file "):
-      # split buffer in spaces
-      # read file that is splitted[1]
-      # give file an Id
-      # publish Id
-      # wait for connections
-      try:
-        discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
-        chatPanel.push("You: " & ctx.data.inputBuffer) # show message in ui
-        systemPanel.push("Sent chat message")
-      except Exception as exc:
-        systemPanel.push("Unable to send chat message: " & exc.msg)
-      finally:
-        ctx.data.inputBuffer = "" # clear input buffer
+      # handle /file command to send/publish files
+      if ctx.data.inputBuffer.startsWith("/file"):
+        let parts = ctx.data.inputBuffer.split(" ")
+        if parts.len < 2:
+          systemPanel.push("Invalid /file command, missing file name")
+        else:
+          for path in parts[1 ..^ 1]:
+            if not fileExists(path):
+              systemPanel.push("Unable to find file '" & path & "', skipping")
+              continue
+            let filename = path.splitFile().name
+            # copy file to /tmp/{filename}
+            let fileId = getTempDir().joinPath(filename)
+            copyFile(path, fileId)
+            # publish /tmp/{filename}
+            try:
+              discard await gossip.publish(FileTopic, cast[seq[byte]](@(fileId)))
+              systemPanel.push("Offering file " & fileId)
+            except Exception as exc:
+              systemPanel.push("Unable to offer file: " & exc.msg)
+      else:
+        try:
+          discard await gossip.publish(room, cast[seq[byte]](@(ctx.data.inputBuffer)))
+          chatPanel.push("You: " & ctx.data.inputBuffer) # show message in ui
+          systemPanel.push("Sent chat message")
+        except Exception as exc:
+          systemPanel.push("Unable to send chat message: " & exc.msg)
+      ctx.data.inputBuffer = "" # clear input buffer
     elif key != iw.Key.None:
       discard
 
