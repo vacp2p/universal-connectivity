@@ -1,4 +1,4 @@
-import tables, deques, strutils, os, base64
+import tables, deques, strutils, os, streams
 
 import libp2p, chronos, cligen, chronicles
 from libp2p/protocols/pubsub/rpc/message import Message
@@ -13,6 +13,7 @@ import ./file_exchange
 const
   KeyFile: string = "local.key"
   PeerIdFile: string = "local.peerid"
+  MaxKeyLen: int = 4096
   ListenPort: int = 9093
 
 proc cleanup() {.noconv.} =
@@ -27,21 +28,37 @@ proc cleanup() {.noconv.} =
   stdout.flushFile()
   quit(130) # SIGINT conventional exit code
 
+proc readKeyFile(filename: string): PrivateKey =
+  var fs = newFileStream(filename, fmRead)
+  defer:
+    fs.close()
+  var buf: array[MaxKeyLen, byte]
+  discard fs.readData(buf.addr, sizeof(buf))
+  PrivateKey.init(buf).tryGet()
+
+proc writeKeyFile(filename: string, key: PrivateKey) =
+  var fs = newFileStream(filename, fmWrite)
+  defer:
+    fs.close()
+  let buf = key.getBytes().tryGet()
+  fs.writeData(buf.addr, sizeof(buf))
+
+proc loadOrCreateKey(rng: var HmacDrbgContext): PrivateKey =
+  if fileExists(KeyFile):
+    try:
+      return readKeyFile(KeyFile)
+    except:
+      discard # overwrite file
+  let k = PrivateKey.random(rng).tryGet()
+  writeKeyFile(KeyFile, k)
+  k
+
 proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
   # Handle Ctrl+C
   setControlCHook(cleanup)
 
   var rng = newRng()
-
-  let key =
-    if fileExists(KeyFile):
-      let raw = base64.decode(readFile(KeyFile))
-      PrivateKey.init(raw).tryGet()
-    else:
-      let k = PrivateKey.random(rng[]).tryGet()
-      let raw = k.getBytes().tryGet()
-      writeFile(KeyFile, base64.encode(raw))
-      k
+  let key = loadOrCreateKey(rng[])
 
   let switch = SwitchBuilder
     .new()
