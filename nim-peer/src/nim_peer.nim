@@ -53,7 +53,9 @@ proc loadOrCreateKey(rng: var HmacDrbgContext): PrivateKey =
   writeKeyFile(KeyFile, k)
   k
 
-proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
+proc start(
+    addrs: Opt[MultiAddress], headless: bool, room: string, port: int
+) {.async.} =
   # Handle Ctrl+C
   setControlCHook(cleanup)
 
@@ -64,7 +66,7 @@ proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
     .new()
     .withRng(rng)
     .withTcpTransport()
-    .withAddresses(@[MultiAddress.init("/ip4/0.0.0.0/tcp/" & $ListenPort).tryGet()])
+    .withAddresses(@[MultiAddress.init("/ip4/0.0.0.0/tcp/" & $port).tryGet()])
     .withYamux()
     .withNoise()
     .withPrivateKey(key)
@@ -180,17 +182,18 @@ proc start(addrs: Opt[MultiAddress], headless: bool, room: string) {.async.} =
         await switch.stop()
       cleanup()
 
-proc cli(connect = "", room = ChatTopic, headless = false) =
+proc cli(connect = "", room = ChatTopic, port = ListenPort, headless = false) =
   var addrs = Opt.none(MultiAddress)
   if connect.len > 0:
     addrs = Opt.some(MultiAddress.init(connect).get())
 
-  waitFor start(addrs, headless, room)
+  waitFor start(addrs, headless, room, port)
 
 when isMainModule:
   dispatch cli,
     help = {
       "connect": "full multiaddress (with /p2p/ peerId) of the node to connect to",
       "room": "Room name",
+      "port": "TCP listen port",
       "headless": "No UI, can only receive messages",
     }
