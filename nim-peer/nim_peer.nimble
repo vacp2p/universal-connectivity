@@ -1,7 +1,7 @@
 # Package
 
 version       = "0.1.0"
-author        = "Gabriel Cruz"
+author        = "Status Research & Development GmbH"
 description   = "universal-connectivity nim peer"
 license       = "MIT"
 srcDir        = "src"

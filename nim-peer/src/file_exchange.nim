@@ -1,5 +1,5 @@
 import os
-import libp2p, chronos, stew/byteutils
+import libp2p, chronos, chronicles, stew/byteutils
 
 const
   MaxFileSize: int = 1024 # 1KiB
@@ -20,7 +20,7 @@ proc new*(T: typedesc[FileExchange]): T =
     except CancelledError as e:
       raise e
     except CatchableError as e:
-      echo "exception in handler", e.msg
+      error "Exception in handler", error = e.msg
     finally:
       await conn.close()
 

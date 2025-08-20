@@ -1,3 +1,5 @@
+{.push raises: [Exception].}
+
 import tables, deques, strutils, os, streams
 
 import libp2p, chronos, cligen, chronicles
@@ -16,32 +18,44 @@ const
   MaxKeyLen: int = 4096
   ListenPort: int = 9093
 
-proc cleanup() {.noconv.} =
-  terminal.resetAttributes()
-  terminal.showCursor()
+proc cleanup() {.noconv: (raises: []).} =
   try:
     iw.deinit()
   except:
     discard
-  # Clear screen and move cursor to top-left
-  stdout.write("\e[2J\e[H") # ANSI escape: clear screen & home
-  stdout.flushFile()
-  quit(130) # SIGINT conventional exit code
+  try:
+    terminal.resetAttributes()
+    terminal.showCursor()
+    # Clear screen and move cursor to top-left
+    stdout.write("\e[2J\e[H") # ANSI escape: clear screen & home
+    stdout.flushFile()
+    quit(130) # SIGINT conventional exit code
+  except IOError as exc:
+    echo "Unexpected error: " & exc.msg
+    quit(1)
 
-proc readKeyFile(filename: string): PrivateKey =
-  let size = getFileSize(filename) # get file size first
+proc readKeyFile(
+    filename: string
+): PrivateKey {.raises: [OSError, IOError, ResultError[crypto.CryptoError]].} =
+  let size = getFileSize(filename)
+
+  if size == 0:
+    raise newException(OSError, "Empty key file")
+
   var buf: seq[byte]
   buf.setLen(size)
 
-  var fs = newFileStream(filename, fmRead)
+  var fs = openFileStream(filename, fmRead)
   defer:
     fs.close()
 
-  discard fs.readData(buf[0].addr, size.int) # read exact number of bytes
+  discard fs.readData(buf[0].addr, size.int)
   PrivateKey.init(buf).tryGet()
 
-proc writeKeyFile(filename: string, key: PrivateKey) =
-  var fs = newFileStream(filename, fmWrite)
+proc writeKeyFile(
+    filename: string, key: PrivateKey
+) {.raises: [OSError, IOError, ResultError[crypto.CryptoError]].} =
+  var fs = openFileStream(filename, fmWrite)
   defer:
     fs.close()
 
@@ -54,53 +68,72 @@ proc loadOrCreateKey(rng: var HmacDrbgContext): PrivateKey =
       return readKeyFile(KeyFile)
     except:
       discard # overwrite file
-  let k = PrivateKey.random(rng).tryGet()
-  writeKeyFile(KeyFile, k)
-  k
+  try:
+    let k = PrivateKey.random(rng).tryGet()
+    writeKeyFile(KeyFile, k)
+    k
+  except:
+    echo "Could not create new key"
+    quit(1)
 
 proc start(
     addrs: Opt[MultiAddress], headless: bool, room: string, port: int
-) {.async.} =
+) {.async: (raises: [CancelledError]).} =
   # Handle Ctrl+C
   setControlCHook(cleanup)
 
   var rng = newRng()
-  let key = loadOrCreateKey(rng[])
 
-  let switch = SwitchBuilder
-    .new()
-    .withRng(rng)
-    .withTcpTransport()
-    .withAddresses(@[MultiAddress.init("/ip4/0.0.0.0/tcp/" & $port).tryGet()])
-    .withYamux()
-    .withNoise()
-    .withPrivateKey(key)
-    .build()
+  let switch =
+    try:
+      SwitchBuilder
+      .new()
+      .withRng(rng)
+      .withTcpTransport()
+      .withAddresses(@[MultiAddress.init("/ip4/0.0.0.0/tcp/" & $port).tryGet()])
+      .withYamux()
+      .withNoise()
+      .withPrivateKey(loadOrCreateKey(rng[]))
+      .build()
+    except LPError as exc:
+      echo "Could not start switch: " & $exc.msg
+      quit(1)
+    except Exception as exc:
+      echo "Could not start switch: " & $exc.msg
+      quit(1)
 
-  writeFile(PeerIdFile, $switch.peerInfo.peerId)
+  try:
+    writeFile(PeerIdFile, $switch.peerInfo.peerId)
+  except IOError as exc:
+    error "Could not write PeerId to file", description = exc.msg
 
-  let gossip = GossipSub.init(switch = switch, triggerSelf = true)
-  switch.mount(gossip)
+  let (gossip, fileExchange) =
+    try:
+      (GossipSub.init(switch = switch, triggerSelf = true), FileExchange.new())
+    except InitializationError as exc:
+      echo "Could not initialize gossipsub: " & $exc.msg
+      quit(1)
 
-  let fileExchange = FileExchange.new()
-  switch.mount(fileExchange)
+  try:
+    switch.mount(gossip)
+    switch.mount(fileExchange)
+    await switch.start()
+  except LPError as exc:
+    echo "Could start switch: " & $exc.msg
 
-  await switch.start()
+  info "Started switch", peerId = $switch.peerInfo.peerId
 
   let
     recvQ = newAsyncQueue[string]()
     peerQ = newAsyncQueue[(PeerId, PeerEventKind)]()
     systemQ = newAsyncQueue[string]()
 
-  await systemQ.put("Started switch: " & $switch.peerInfo.peerId)
-
   # if --connect was specified, connect to peer
   if addrs.isSome():
     try:
       discard await switch.connect(addrs.get())
     except Exception as exc:
-      error "Connection error", error = exc.msg
-      await systemQ.put("Connection error: " & exc.msg)
+      error "Connection error", description = exc.msg
 
   # wait so that gossipsub can form mesh
   await sleepAsync(3.seconds)
@@ -139,8 +172,7 @@ proc start(
   # when a new peer is announced
   let onNewPeer = proc(topic: string, data: seq[byte]) {.async, gcsafe.} =
     let peerId = PeerId.init(data).valueOr:
-      await systemQ.put("Error parsing PeerId from data: " & $data)
-      await systemQ.put(" ") # empty line
+      error "Could not parse PeerId from data", data = $data
       return
     await peerQ.put((peerId, PeerEventKind.Joined))
 
@@ -181,18 +213,23 @@ proc start(
     try:
       await runUI(gossip, room, recvQ, peerQ, systemQ, switch.peerInfo.peerId)
     except Exception as exc:
-      echo "Unexpected error: " & exc.msg
+      error "Unexpected error", description = exc.msg
     finally:
       if switch != nil:
         await switch.stop()
-      cleanup()
+      try:
+        cleanup()
+      except:
+        discard
 
 proc cli(connect = "", room = ChatTopic, port = ListenPort, headless = false) =
   var addrs = Opt.none(MultiAddress)
   if connect.len > 0:
     addrs = Opt.some(MultiAddress.init(connect).get())
-
-  waitFor start(addrs, headless, room, port)
+  try:
+    waitFor start(addrs, headless, room, port)
+  except CancelledError:
+    echo "Operation cancelled"
 
 when isMainModule:
   dispatch cli,
